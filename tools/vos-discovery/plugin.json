@@ -2,8 +2,6 @@
     "name": "VoS Discovery (dev tool)",
     "version": "0.1.0",
     "contactEmailAddress": "REPLACE_WITH_CONTACT_EMAIL@example.com",
-    "requiredDependencies": [],
-    "optionalDependencies": [],
     "requiredPermissions": [],
     "optionalPermissions": [ "chatAccess" ],
     "urls": {}
