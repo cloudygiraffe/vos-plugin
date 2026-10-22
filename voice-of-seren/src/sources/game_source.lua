@@ -13,6 +13,11 @@
 -- Iorwerth had the Voice: the hour is the UTC hour, and the clans are numbered
 -- alphabetically from 0 (Amlodd) to 7 (Trahaearn). Since 0 is a real clan,
 -- an all-zero (not yet sent) value is caught by the "same clan twice" check.
+--
+-- On leaving Prifddinas the hour dropped to 0 while the clans stayed (same
+-- session, 16:57 UTC), so the values are only kept up to date in the city.
+-- Without a clock, an hour of 0 is therefore treated as "not in Prifddinas"
+-- (at the cost of ignoring the real midnight-UTC hour in that case).
 
 local Clock = require("src/clock")
 local TimeUtil = require("src/timeutil")
@@ -76,13 +81,15 @@ local function readAll()
     end
     local now = Clock.Now()
     local hourStart = nil
+    local gameHour = read(HOUR)
     if now then
-        local gameHour = read(HOUR)
         local currentHour = math.floor(now / 3600) % 24
         if gameHour ~= currentHour then
             return nil
         end
         hourStart = TimeUtil.HourStart(now)
+    elseif gameHour == nil or gameHour == 0 then
+        return nil
     end
     return {
         clans = clans,
