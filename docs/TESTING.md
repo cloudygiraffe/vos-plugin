@@ -70,6 +70,11 @@ Run `pon voice-of-seren`, then check each item.
 - [ ] `<col=...>` colours and `<br>` line breaks render (rather than showing as text).
 
 ### Relog
-- [ ] Log out and back in within the same hour. The panel shows this hour's Voice again ("saved from earlier this hour").
+- [ ] Log out and back in within the same hour. Once the plugin knows the time
+      (system clock, Wiki API or a chat message), the panel shows this hour's
+      Voice again ("saved from earlier this hour"). With no permissions and no
+      `os.time()`, this can't happen; note which case you tested.
+- [ ] Reload with `prl voice-of-seren` while a watched clan is active. The alert
+      should not repeat.
 
 Report anything odd as a GitHub issue with the console output, ideally with a screenshot.

@@ -10,9 +10,11 @@
 -- Notes:
 --   * The data is crowdsourced, so it can lag behind the game. The timestamp
 --     says which hour it describes; the plugin only treats it as current if
---     that hour matches the real clock.
+--     that hour matches the real clock. It also ranks lowest of the sources,
+--     so the game's own announcement always wins for the same hour.
 --   * The Wiki asks API users to send a descriptive User-Agent.
---   * Requests are spaced out: once shortly after each hour change, with
+--   * Requests are spaced out: once shortly after each hour change (with a
+--     little spread so every player does not ask at the same second), and
 --     retries no more often than every 5 minutes.
 --
 -- Permission: needs the optional "httpAccess" permission. The base URL is
@@ -21,6 +23,7 @@
 local Clans = require("src/clans")
 local TimeUtil = require("src/timeutil")
 local Clock = require("src/clock")
+local VosState = require("src/vos_state")
 
 local ApiSource = {}
 
@@ -30,7 +33,9 @@ ApiSource.USER_AGENT = "rs3-voice-of-seren-plugin/0.1 (+https://github.com/cloud
 
 local RETRY_SECONDS = 300            -- data not updated yet, or request failed
 local AFTER_HOUR_CHANGE_SECONDS = 90 -- give the wiki time to update each hour
+local SPREAD_SECONDS = 60            -- up to this much extra delay, varies per player
 local UNKNOWN_CLOCK_SECONDS = 600    -- poll interval if we never learn the time
+local HTTP_OK = 200
 
 local requestInFlight = false
 local nextRequestTick = 0
@@ -59,15 +64,16 @@ function ApiSource.ParseBody(body)
         hourStart = hourStart and TimeUtil.HourStart(hourStart) or nil,
         source = ApiSource.LABEL,
         observedAt = Clock.Now(),
+        rank = VosState.RANK.WIKI_API,
     }
 end
 
 -- True if the player granted the optional web-request permission.
 function ApiSource.IsAllowed()
-    if Plugin == nil or PluginPermissions == nil then
-        return false
-    end
-    return Plugin.HasPermission(PluginPermissions.httpAccess)
+    local ok, granted = pcall(function()
+        return Plugin.HasPermission(PluginPermissions.httpAccess)
+    end)
+    return ok and granted == true
 end
 
 -- Decides how long to wait before the next request.
@@ -77,22 +83,32 @@ local function scheduleNext(dataIsCurrent)
     if now == nil then
         delaySeconds = UNKNOWN_CLOCK_SECONDS
     elseif dataIsCurrent then
-        delaySeconds = TimeUtil.SecondsUntilNextHour(now) + AFTER_HOUR_CHANGE_SECONDS
+        -- A per-player spread taken from the client's tick count, so that
+        -- not every player asks the Wiki at exactly the same moment.
+        local spread = Clock.CurrentTick() % (SPREAD_SECONDS + 1)
+        delaySeconds = TimeUtil.SecondsUntilNextHour(now) + AFTER_HOUR_CHANGE_SECONDS + spread
     else
         delaySeconds = RETRY_SECONDS
     end
     nextRequestTick = Clock.CurrentTick() + Clock.SecondsToTicks(delaySeconds)
 end
 
--- Asks for an immediate refresh on the next Update() call (e.g. the player
--- just granted the permission, or pressed "Refresh").
+-- Asks for a request on the next Update() call, e.g. right after the player
+-- grants the web-request permission.
 function ApiSource.RequestSoon()
     nextRequestTick = 0
 end
 
--- Last error, for the panel ("" or nil when everything is fine).
+-- Text describing the last problem talking to the Wiki, or nil if the last
+-- request worked. Shown in the panel.
 function ApiSource.LastError()
     return lastErrorText
+end
+
+-- Records a failed request and schedules a retry.
+local function fail(message)
+    lastErrorText = message
+    scheduleNext(false)
 end
 
 -- Called regularly (every server tick). Starts a request when one is due.
@@ -111,26 +127,33 @@ function ApiSource.Update(onReading)
     request:Get(function(finished)
         requestInFlight = false
 
+        if finished.cancelled then
+            fail(nil)
+            return
+        end
+        if finished.timedOut then
+            fail("Wiki API timed out")
+            return
+        end
         if not finished.successful then
-            if finished.timedOut then
-                lastErrorText = "Wiki API timed out"
-            else
-                lastErrorText = "Wiki API request failed (" .. tostring(finished.errorCode) .. ")"
-            end
-            scheduleNext(false)
+            fail("Wiki API request failed (error " .. tostring(finished.errorCode) .. ")")
+            return
+        end
+        -- "successful" means a response arrived; check it was not an error page.
+        if finished.responseCode ~= nil and finished.responseCode ~= HTTP_OK then
+            fail("Wiki API returned HTTP " .. tostring(finished.responseCode))
             return
         end
 
         -- The response's Date header tells us the real time.
         local serverTime = TimeUtil.ParseHttpDateHeader(finished.header)
         if serverTime then
-            Clock.Sync(serverTime, "Wiki API server time")
+            Clock.Sync(serverTime)
         end
 
         local reading, parseError = ApiSource.ParseBody(finished.data)
         if reading == nil then
-            lastErrorText = "Wiki API: " .. parseError
-            scheduleNext(false)
+            fail("Wiki API: " .. parseError)
             return
         end
 

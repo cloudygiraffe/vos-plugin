@@ -14,6 +14,7 @@
 
 local Clans = require("src/clans")
 local TimeUtil = require("src/timeutil")
+local VosState = require("src/vos_state")
 
 local ChatSource = {}
 
@@ -91,6 +92,7 @@ function ChatSource.HandleEvent(event, onTime, onReading)
         hourStart = observedAt and TimeUtil.HourStart(observedAt) or nil,
         source = ChatSource.LABEL,
         observedAt = observedAt,
+        rank = VosState.RANK.CHAT,
     })
 end
 

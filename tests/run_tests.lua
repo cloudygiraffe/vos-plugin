@@ -129,9 +129,27 @@ end)
 
 test("Clock counts forward with logic ticks (50 per second)", function()
     Clock.OnLogicTick(1000)
-    Clock.Sync(OCT_22_2026_15_00, "test")
+    Clock.Sync(OCT_22_2026_15_00)
     Clock.OnLogicTick(1000 + 50 * 90) -- 90 seconds later
     eq(Clock.Now(), OCT_22_2026_15_00 + 90)
+end)
+
+test("Syncing before the first tick does not add the client's uptime", function()
+    -- os.time() is read when the plugin loads, before any Logic event. The
+    -- first tick then reports two hours of client uptime.
+    Clock.Sync(OCT_22_2026_15_00)
+    eq(Clock.Now(), OCT_22_2026_15_00)
+    Clock.OnLogicTick(360000)
+    eq(Clock.Now(), OCT_22_2026_15_00)
+    Clock.OnLogicTick(360000 + 50 * 10)
+    eq(Clock.Now(), OCT_22_2026_15_00 + 10)
+end)
+
+test("Chat timestamps only set the clock when nothing better is known", function()
+    Clock.OnLogicTick(1)
+    Clock.Sync(OCT_22_2026_15_00)
+    Clock.SyncIfUnknown(OCT_22_2026_15_00 + 999)
+    eq(Clock.Now(), OCT_22_2026_15_00)
 end)
 
 --------------------------------------------------------------------------------
@@ -193,8 +211,9 @@ end)
 -- state
 --------------------------------------------------------------------------------
 
-local function reading(clans, hourStart, source)
-    return { clans = clans, hourStart = hourStart, source = source or "test", observedAt = hourStart }
+local function reading(clans, hourStart, rank)
+    return { clans = clans, hourStart = hourStart, source = "test", observedAt = hourStart,
+             rank = rank or VosState.RANK.WIKI_API }
 end
 
 test("First reading is new and reports both clans", function()
@@ -224,10 +243,29 @@ test("An older hour never replaces a newer one", function()
     listEq(VosState.Current().clans, { "Iorwerth", "Cadarn" })
 end)
 
-test("A new hour only reports clans that were not already active", function()
+test("Every clan in a new hour counts as newly active", function()
+    -- e.g. the Wiki was hours behind, then catches up with a clan it last
+    -- showed long ago. That is still a fresh activation worth alerting.
     VosState.Report(reading({ "Iorwerth", "Cadarn" }, OCT_22_2026_15_00))
-    local _, newClans = VosState.Report(reading({ "Cadarn", "Meilyr" }, OCT_22_2026_16_00))
-    listEq(newClans, { "Meilyr" })
+    local _, newClans = VosState.Report(reading({ "Iorwerth", "Hefin" }, OCT_22_2026_16_00))
+    listEq(newClans, { "Iorwerth", "Hefin" })
+end)
+
+test("The game's announcement corrects the Wiki for the same hour", function()
+    VosState.Report(reading({ "Iorwerth", "Cadarn" }, OCT_22_2026_15_00, VosState.RANK.WIKI_API))
+    local changed, newClans = VosState.Report(reading({ "Hefin" }, OCT_22_2026_15_00, VosState.RANK.CHAT))
+    eq(changed, true)
+    listEq(newClans, { "Hefin" })
+    listEq(VosState.Current().clans, { "Hefin" })
+    VosState.Report(reading({ "Ithell" }, OCT_22_2026_15_00, VosState.RANK.CHAT))
+    listEq(VosState.Current().clans, { "Hefin", "Ithell" })
+end)
+
+test("The Wiki never overrides the game's announcement for the same hour", function()
+    VosState.Report(reading({ "Hefin", "Ithell" }, OCT_22_2026_15_00, VosState.RANK.CHAT))
+    local changed = VosState.Report(reading({ "Iorwerth", "Cadarn" }, OCT_22_2026_15_00, VosState.RANK.WIKI_API))
+    eq(changed, false)
+    listEq(VosState.Current().clans, { "Hefin", "Ithell" })
 end)
 
 test("Readings are only current during their own hour", function()
@@ -248,6 +286,19 @@ test("Saved history restores this hour after a relog", function()
     VosState.LoadHistory({ { hourStart = OCT_22_2026_15_00, clans = { "Crwys", "Amlodd" } } })
     eq(VosState.RestoreCurrentFromHistory(OCT_22_2026_15_37), true)
     listEq(VosState.Current().clans, { "Crwys", "Amlodd" })
+end)
+
+test("Saved history replaces a reading that turned out to be old", function()
+    VosState.LoadHistory({ { hourStart = OCT_22_2026_15_00, clans = { "Crwys", "Amlodd" } } })
+    -- The Wiki is a day behind and answers first.
+    VosState.Report(reading({ "Hefin", "Ithell" }, OCT_22_2026_15_00 - 86400))
+    eq(VosState.RestoreCurrentFromHistory(OCT_22_2026_15_37), true)
+    listEq(VosState.Current().clans, { "Crwys", "Amlodd" })
+end)
+
+test("History saved with string keys still loads", function()
+    VosState.LoadHistory({ ["1"] = { hourStart = OCT_22_2026_15_00, clans = { ["1"] = "Crwys", ["2"] = "Amlodd" } } })
+    eq(#VosState.History(), 1)
 end)
 
 test("Saved history from an earlier hour is not restored as current", function()
@@ -274,7 +325,8 @@ test("Strip without a clock still shows the clans", function()
 end)
 
 test("Help text appears only when nothing can read the Voice from anywhere", function()
-    eq(Display.HelpText(true, false, false), "")
+    eq(Display.HelpText(true, false, false, nil), "")
+    eq(Display.HelpText(true, false, false, "Wiki API timed out") ~= "", true)
     eq(Display.HelpText(false, false, true), "")
     eq(Display.HelpText(false, false, false) ~= "", true)
 end)

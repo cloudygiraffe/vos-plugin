@@ -38,7 +38,7 @@ The plugin can learn the Voice three ways. It uses whichever ones you allow.
 | Source | Permission | Works outside Prifddinas? | Notes |
 |---|---|---|---|
 | Game data | none | yes | **Not wired up yet.** Needs the variable name, which the discovery tool will find on the beta world. |
-| RuneScape Wiki API | optional *web requests* (`httpAccess`) | yes | Uses `https://api.weirdgloop.org/runescape/vos`. Crowdsourced, so it can lag; old data is shown as "last known", never as current. |
+| RuneScape Wiki API | optional *web requests* (`httpAccess`) | yes | Uses `https://api.weirdgloop.org/runescape/vos`. Crowdsourced, so it can lag. Once the plugin knows the time, data for an older hour is shown as "waiting for this hour", not as current. The game's own announcement always overrides it. |
 | Prifddinas announcement | optional *chat access* (`chatAccess`) | no | Reads the game's own "The Voice of Seren is now active in the ... district." message. Only player-free system messages are accepted. |
 
 Both permissions are **optional**. The plugin runs without them, and the panel
@@ -46,10 +46,11 @@ explains what each one adds.
 
 ### The clock
 
-The plugin API has no clock, but a countdown needs the time. The plugin learns
-it from the Wiki API's response date or a chat message timestamp, then counts
-forward using the client's fixed 50 logic ticks per second. Without either,
-the strip simply shows the clans and says the Voice changes at the top of the
+The plugin API has no documented clock, but a countdown needs the time. The
+plugin tries Lua's `os.time()` (undocumented, so it may not exist), then the
+Wiki API's response date, then a chat message timestamp. After that it counts
+forward using the client's fixed 50 logic ticks per second. With no clock
+source, the strip shows the clans and says the Voice changes at the top of the
 hour.
 
 ## Plugin guidelines

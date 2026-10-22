@@ -61,17 +61,36 @@ Event = strict("Event", {
 -- Fake UI
 --------------------------------------------------------------------------------
 
+-- Properties the plugin may set, taken from the Component, Text and Check
+-- doc pages. Writing anything else (e.g. a typo like "isShadowd") fails.
+local DOCUMENTED_PROPERTIES = {
+    Layer = {},
+    Text = { content = true, font = true, maxLines = true, isShadowed = true,
+             hidden = true, clickthrough = true, stylesheetID = true },
+    Check = { label = true, value = true, alignment = true, stylesheetID = true,
+              hidden = true, clickthrough = true },
+}
+
 local allComponents = {}
 local function fakeComponent(kind)
-    local component = {
-        kind = kind,
-        hooks = {},
-        visibleGlobal = true,
-    }
-    function component.SetPos(self, x, y, px, py, sx, sy) self.pos = { x, y, px, py, sx, sy } end
-    function component.SetSize(self, w, h, pw, ph) self.size = { w, h, pw, ph } end
-    function component.AlignTo(self, h, v) self.align = { h, v } end
-    function component.Subscribe(self, hook, callback) self.hooks[hook] = callback end
+    local state = { kind = kind, hooks = {}, visibleGlobal = true }
+    local methods = {}
+    function methods.SetPos(_, x, y, px, py, sx, sy) state.pos = { x, y, px, py, sx, sy } end
+    function methods.SetSize(_, w, h, pw, ph) state.size = { w, h, pw, ph } end
+    function methods.AlignTo(_, h, v) state.align = { h, v } end
+    function methods.Subscribe(_, hook, callback) state.hooks[hook] = callback end
+    local component = setmetatable({}, {
+        __index = function(_, key)
+            if methods[key] then return methods[key] end
+            return state[key]
+        end,
+        __newindex = function(_, key, value)
+            if not DOCUMENTED_PROPERTIES[kind][key] then
+                error("plugin set undocumented property " .. kind .. "." .. tostring(key), 2)
+            end
+            state[key] = value
+        end,
+    })
     table.insert(allComponents, component)
     return component
 end
@@ -169,6 +188,7 @@ check(request.headers["User-Agent"] ~= nil, "request sends a User-Agent")
 
 request.onDone({
     successful = true,
+    responseCode = 200,
     header = "HTTP/1.1 200 OK\r\nDate: Thu, 22 Oct 2026 15:37:00 GMT\r\n",
     data = '{"timestamp":"2026-10-22T15:00:00.000Z","district1":"Iorwerth","district2":"Cadarn","source":"x"}',
 })
@@ -187,7 +207,10 @@ for _, component in ipairs(allComponents) do
     end
 end
 check(meilyrBox ~= nil, "panel has a Meilyr checkbox")
-meilyrBox.hooks.ONBUTTONPRESSED(meilyrBox, true)
+-- The game ticks the box, then calls the hook. The Component docs say the
+-- second argument is an Int, so pass 1 rather than true.
+meilyrBox.value = true
+meilyrBox.hooks.ONBUTTONPRESSED(meilyrBox, 1)
 check(database.watchedClans and database.watchedClans.Meilyr == true, "watching Meilyr is saved")
 
 -- At the next hour, the Prifddinas announcement arrives for Meilyr.

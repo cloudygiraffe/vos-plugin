@@ -8,12 +8,9 @@
 
 local Clans = {}
 
--- Benefits that every active district gets, regardless of clan.
-Clans.SHARED_EFFECTS = {
-    "Bonus Thieving XP from pickpocketing the district's workers",
-    "Higher chance of golden rocks in the clan's skill",
-    "Chance of a crystal impling spawning near the herald",
-}
+-- Every active district also gives bonus Thieving XP from its workers, more
+-- golden rocks in the clan's skill, and a chance of a crystal impling. The
+-- panel does not repeat those for each clan, to save space.
 
 -- One entry per clan, in alphabetical order (the order used in the UI).
 --   name    : the clan name exactly as the game writes it
@@ -68,8 +65,7 @@ Clans.LIST = {
         effects = {
             "Bonus Crafting and Construction XP from harps",
             "Bonus Crafting XP from crystal flasks",
-            "Double Construction Supplies stock",
-            "Mined soft clay can go straight to the bank",
+            "Double Construction Supplies stock; soft clay can go to the bank",
         },
     },
     {

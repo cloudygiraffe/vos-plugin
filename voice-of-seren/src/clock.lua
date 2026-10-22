@@ -12,7 +12,8 @@
 --   2. The "Date" header on a web response (only if the optional httpAccess
 --      permission was granted).
 --   3. The timestamp on an incoming chat message (only if the optional
---      chatAccess permission was granted).
+--      chatAccess permission was granted). Only used while nothing better is
+--      known, via Clock.SyncIfUnknown.
 --
 -- If none of these are available, Clock.Now() returns nil and the rest of the
 -- plugin falls back to messages like "changes at the top of the hour".
@@ -22,13 +23,23 @@ local Clock = {}
 local LOGIC_TICKS_PER_SECOND = 50
 
 local latestLogicTick = 0   -- updated by OnLogicTick, ~50 times a second
+local hasSeenTick = false   -- false until the first Logic event arrives
 local syncedUnix = nil      -- Unix time at the moment of the last sync
 local syncedLogicTick = nil -- logic tick at the moment of the last sync
-local syncSource = nil      -- human-readable name of the last sync source
+local anchorPending = false -- synced before any tick was seen (see OnLogicTick)
 
 -- Called from the Logic event with the client's running tick count.
 function Clock.OnLogicTick(logicTick)
     latestLogicTick = logicTick
+    hasSeenTick = true
+    -- The logic tick counts up from when the client started, not from when
+    -- the plugin loaded. If the clock was synced before the first tick
+    -- arrived, anchor it to this first real tick; otherwise the clock would
+    -- jump forward by the client's whole uptime.
+    if anchorPending then
+        syncedLogicTick = logicTick
+        anchorPending = false
+    end
 end
 
 -- Returns the most recent logic tick. Also used by other modules to measure
@@ -42,14 +53,27 @@ function Clock.SecondsToTicks(seconds)
     return math.floor(seconds * LOGIC_TICKS_PER_SECOND)
 end
 
--- Records that "right now" is `unixSeconds`, according to `sourceName`.
-function Clock.Sync(unixSeconds, sourceName)
+-- Records that "right now" is `unixSeconds`.
+function Clock.Sync(unixSeconds)
     if type(unixSeconds) ~= "number" then
         return
     end
     syncedUnix = unixSeconds
-    syncedLogicTick = latestLogicTick
-    syncSource = sourceName
+    if hasSeenTick then
+        syncedLogicTick = latestLogicTick
+        anchorPending = false
+    else
+        syncedLogicTick = 0
+        anchorPending = true
+    end
+end
+
+-- Like Sync, but only if the time is not known yet. Used for lower-quality
+-- sources such as chat timestamps.
+function Clock.SyncIfUnknown(unixSeconds)
+    if syncedUnix == nil then
+        Clock.Sync(unixSeconds)
+    end
 end
 
 -- Tries to read the time from os.time(). Returns true if that worked.
@@ -61,7 +85,7 @@ function Clock.TrySystemClock()
         return nil
     end)
     if ok and type(value) == "number" then
-        Clock.Sync(value, "system clock")
+        Clock.Sync(value)
         return true
     end
     return false
@@ -77,21 +101,20 @@ function Clock.Now()
     if syncedUnix == nil then
         return nil
     end
+    if anchorPending then
+        return syncedUnix -- no ticks have passed since the sync yet
+    end
     local elapsedTicks = latestLogicTick - syncedLogicTick
     return syncedUnix + elapsedTicks / LOGIC_TICKS_PER_SECOND
 end
 
--- Name of the source the clock was last synced from (for the panel), or nil.
-function Clock.Source()
-    return syncSource
-end
-
--- Test helper: forget any sync. Not used by the plugin itself.
+-- Test helper: forget everything. Not used by the plugin itself.
 function Clock.Reset()
     latestLogicTick = 0
+    hasSeenTick = false
     syncedUnix = nil
     syncedLogicTick = nil
-    syncSource = nil
+    anchorPending = false
 end
 
 return Clock

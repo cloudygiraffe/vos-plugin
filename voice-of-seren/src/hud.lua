@@ -50,35 +50,52 @@ function Hud:EnsureBuilt()
     if parent == nil then
         return false
     end
-    self.strip = makeLine(parent, STRIP_TOP)
-    self.alert = makeLine(parent, STRIP_TOP + STRIP_HEIGHT + 2)
-    self.alert.hidden = true
-    self.strip.hidden = not self.enabled
-    return true
+    local ok = pcall(function()
+        self.strip = makeLine(parent, STRIP_TOP)
+        self.alert = makeLine(parent, STRIP_TOP + STRIP_HEIGHT + 2)
+        self.alert.hidden = true
+        self.strip.hidden = not self.enabled
+    end)
+    if not ok then
+        self.strip, self.alert = nil, nil
+    end
+    return ok
+end
+
+-- Runs a change on the components. If they have stopped working (for
+-- example the game rebuilt its interface after a trip to the lobby), forget
+-- them so the next call builds fresh ones instead of failing every tick.
+function Hud:Apply(change)
+    if not self:EnsureBuilt() then
+        return
+    end
+    local ok = pcall(change)
+    if not ok then
+        self.strip, self.alert = nil, nil
+    end
 end
 
 -- Turns the strip on or off (alerts still show either way).
 function Hud:SetEnabled(enabled)
     self.enabled = enabled
-    if self.strip then
+    self:Apply(function()
         self.strip.hidden = not enabled
-    end
+    end)
 end
 
 -- Updates the strip's text.
 function Hud:SetText(content)
-    if self:EnsureBuilt() then
+    self:Apply(function()
         self.strip.content = content
-    end
+    end)
 end
 
 -- Shows an alert line for a few seconds.
 function Hud:ShowAlert(content)
-    if not self:EnsureBuilt() then
-        return
-    end
-    self.alert.content = "<col=ffd24a>" .. content .. "</col>"
-    self.alert.hidden = false
+    self:Apply(function()
+        self.alert.content = "<col=ffd24a>" .. content .. "</col>"
+        self.alert.hidden = false
+    end)
     self.alertHideTick = Clock.CurrentTick() + Clock.SecondsToTicks(ALERT_SECONDS)
 end
 
@@ -86,9 +103,9 @@ end
 function Hud:Update()
     if self.alertHideTick and Clock.CurrentTick() >= self.alertHideTick then
         self.alertHideTick = nil
-        if self.alert then
+        self:Apply(function()
             self.alert.hidden = true
-        end
+        end)
     end
 end
 

@@ -60,8 +60,10 @@ local function addCheck(parent, xFraction, y, label, ticked, onToggle)
     check.alignment = ui.CheckAlignMode.LEFT
     check.label = label
     check.value = ticked
-    check:Subscribe(ui.Hook.ONBUTTONPRESSED, function(_, isTicked)
-        onToggle(isTicked == true)
+    -- The docs disagree on what this hook passes (a Bool on the Check page, an
+    -- Int on the Component page), so read the documented Bool `value` instead.
+    check:Subscribe(ui.Hook.ONBUTTONPRESSED, function(component)
+        onToggle(component.value == true)
     end)
     return check
 end
@@ -161,7 +163,7 @@ function Panel:Refresh(view)
 
         parts.source.content = Display.SourceLine(view.current, view.now)
         parts.history.content = Display.HistoryText(view.history, view.now, HISTORY_ROWS)
-        parts.help.content = Display.HelpText(view.httpAllowed, view.chatAllowed, view.gameConfigured)
+        parts.help.content = Display.HelpText(view.httpAllowed, view.chatAllowed, view.gameConfigured, view.apiError)
     end)
 end
 

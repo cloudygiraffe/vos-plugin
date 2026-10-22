@@ -11,6 +11,7 @@ local Storage = {}
 local KEY_WATCHED = "watchedClans" -- table: { Iorwerth = true, Cadarn = true }
 local KEY_HUD = "showOnScreenStrip" -- boolean
 local KEY_HISTORY = "history"       -- list: { { hourStart = n, clans = {...} }, ... }
+local KEY_ALERTED = "alerted"       -- table: { hour = n, clans = { Iorwerth = true } }
 
 -- Wraps a PersistentDB call so a storage problem never stops the plugin.
 local function safely(action, fallback)
@@ -68,6 +69,24 @@ end
 function Storage.SaveHistory(history)
     safely(function()
         return PersistentDB:SetStructuredData(KEY_HISTORY, history)
+    end)
+end
+
+-- Which clans have already alerted, and for which hour, so a reload in the
+-- same hour does not repeat alerts.
+function Storage.LoadAlerted()
+    local saved = safely(function()
+        return PersistentDB:GetStructuredData(KEY_ALERTED)
+    end, nil)
+    if type(saved) ~= "table" or type(saved.clans) ~= "table" then
+        return { hour = nil, clans = {} }
+    end
+    return { hour = saved.hour, clans = saved.clans }
+end
+
+function Storage.SaveAlerted(alerted)
+    safely(function()
+        return PersistentDB:SetStructuredData(KEY_ALERTED, alerted)
     end)
 end
 

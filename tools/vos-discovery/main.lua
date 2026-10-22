@@ -173,8 +173,11 @@ end)
 --------------------------------------------------------------------------------
 
 say("Scanning variable names. This takes a minute or two...")
+-- Once the scan is finished, scanStep() returns false and the handler simply
+-- does nothing (unsubscribing from inside its own handler is not documented).
+local scanFinished = false
 Event.ServerLogic.Subscribe("vosDiscoveryScan", function()
-    if not scanStep() then
-        Event.ServerLogic.Unsubscribe("vosDiscoveryScan")
+    if not scanFinished then
+        scanFinished = not scanStep()
     end
 end)

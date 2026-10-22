@@ -14,6 +14,7 @@
 
 local Clock = require("src/clock")
 local TimeUtil = require("src/timeutil")
+local VosState = require("src/vos_state")
 
 local GameSource = {}
 
@@ -59,6 +60,7 @@ local function readAll()
                     hourStart = now and TimeUtil.HourStart(now) or nil,
                     source = GameSource.LABEL,
                     observedAt = now,
+                    rank = VosState.RANK.GAME,
                 }
             end
         end

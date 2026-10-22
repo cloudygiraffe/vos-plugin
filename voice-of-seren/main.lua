@@ -34,9 +34,9 @@ local watchedClans = Storage.LoadWatchedClans() -- { Iorwerth = true, ... }
 local hudEnabled = Storage.LoadHudEnabled()
 VosState.LoadHistory(Storage.LoadHistory())
 
--- Alerts already shown, so each clan alerts at most once per hour.
-local alertedThisHour = {}
-local alertedHour = nil
+-- Alerts already shown, so each clan alerts at most once per hour, even
+-- across a reload or relog.
+local alerted = Storage.LoadAlerted() -- { hour = number|nil, clans = { Iorwerth = true } }
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -60,6 +60,7 @@ local function buildView()
         httpAllowed = hasPermission(PluginPermissions.httpAccess),
         chatAllowed = hasPermission(PluginPermissions.chatAccess),
         gameConfigured = GameSource.IsConfigured(),
+        apiError = ApiSource.LastError(),
     }
 end
 
@@ -81,14 +82,19 @@ local function alertFor(newClans)
         return -- never alert about an old hour
     end
     local current = VosState.Current()
-    local hour = current and current.hourStart or nil
-    if hour ~= alertedHour then
-        alertedHour = hour
-        alertedThisHour = {}
+    -- Which hour these alerts belong to. Fall back to when the reading was
+    -- seen if the source did not say.
+    local hour = current and current.hourStart
+    if hour == nil and current and current.observedAt then
+        hour = TimeUtil.HourStart(current.observedAt)
+    end
+    if hour ~= alerted.hour then
+        alerted = { hour = hour, clans = {} }
     end
     for _, clanName in ipairs(newClans) do
-        if watchedClans[clanName] and not alertedThisHour[clanName] then
-            alertedThisHour[clanName] = true
+        if watchedClans[clanName] and not alerted.clans[clanName] then
+            alerted.clans[clanName] = true
+            Storage.SaveAlerted(alerted)
             local message = Display.AlertText(clanName)
             hud:ShowAlert(message)
             if hasPermission(PluginPermissions.chatAccess) then
@@ -108,13 +114,9 @@ local function handleReading(reading)
     end
 end
 
--- Called whenever a source tells us the real time.
-local clockWasKnown = Clock.IsKnown()
-local function onClockLearned()
-    if clockWasKnown then
-        return
-    end
-    clockWasKnown = true
+-- Once the real time is known, saved history can fill in this hour's Voice
+-- (after a relog) or replace a reading that turned out to be out of date.
+local function restoreFromHistoryIfUseful()
     if VosState.RestoreCurrentFromHistory(Clock.Now()) then
         refreshUi()
     end
@@ -163,19 +165,21 @@ Event.ServerLogic.Subscribe("vosTick", function()
     ApiSource.Update(handleReading)
     hud:Update()
     if Clock.IsKnown() then
-        onClockLearned()
+        restoreFromHistoryIfUseful()
     end
     if serverTicks % REFRESH_EVERY_SERVER_TICKS == 0 then
         refreshUi()
     end
 end)
 
--- Chat: the Prifddinas announcement, and a source of the real time.
+-- Chat: the Prifddinas announcement, and a fallback source of the real time.
 -- Only delivered if the player granted the optional chatAccess permission.
-Event.ChatMessage.Subscribe("vosChat", function(event)
-    ChatSource.HandleEvent(event,
-        function(unixSeconds) Clock.Sync(unixSeconds, "chat message time") end,
-        handleReading)
+-- The docs do not say whether subscribing without the permission is allowed,
+-- so the subscription is guarded: the plugin must work without it.
+pcall(function()
+    Event.ChatMessage.Subscribe("vosChat", function(event)
+        ChatSource.HandleEvent(event, Clock.SyncIfUnknown, handleReading)
+    end)
 end)
 
 -- Game variables: only used once game_source.lua knows which ones to watch.
@@ -185,7 +189,9 @@ end)
 
 -- Fetch straight away when the player grants web access.
 Event.OptionalPermissionChanged.Subscribe("vosPermissions", function(event)
-    if event.enabled and event.permissionName == "httpAccess" then
+    local isHttp = event.permissionName == "httpAccess"
+        or event.permissionName == PluginPermissions.httpAccess
+    if event.enabled and isHttp then
         ApiSource.RequestSoon()
     end
     refreshUi()

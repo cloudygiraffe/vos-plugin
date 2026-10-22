@@ -119,8 +119,12 @@ function Display.HistoryText(history, now, maxEntries)
     return table.concat(lines, "<br>")
 end
 
--- Advice shown when the plugin has no way to learn the Voice yet.
-function Display.HelpText(httpAllowed, chatAllowed, gameConfigured)
+-- Advice shown when the plugin has no way to learn the Voice yet, or a note
+-- about the last problem reaching the Wiki API (apiError, or nil).
+function Display.HelpText(httpAllowed, chatAllowed, gameConfigured, apiError)
+    if httpAllowed and apiError then
+        return colour(apiError .. ". Retrying in a few minutes.", MUTED_COLOUR)
+    end
     if httpAllowed or gameConfigured then
         return ""
     end

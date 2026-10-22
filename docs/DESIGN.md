@@ -29,12 +29,18 @@ that, adding or removing a source never touches the UI code.
 ## Rules in vos_state.lua
 
 - A reading for an **older hour** never replaces a newer one. It only goes into history.
-- Two readings for the **same hour** are merged, up to two clans. This covers the
-  game announcing each district in its own chat message.
+- Sources are **ranked**: game data, then the Prifddinas announcement, then the
+  Wiki API. For the same hour, a higher-ranked reading replaces the clans and a
+  lower-ranked one is ignored.
+- Two readings of the **same rank** for the same hour are merged, up to two
+  clans. This covers the game announcing each district in its own message.
+- In a **new hour**, every clan counts as newly active (a clan can't hold the
+  Voice two hours running), so watched clans always alert.
 - A reading is **current** only if its hour matches the real clock. If the
   clock is unknown, the latest reading is trusted.
 - **Alerts** fire only for current readings, only for watched clans, and at most
-  once per clan per hour.
+  once per clan per hour. Which clans already alerted is saved, so reloading the
+  plugin doesn't repeat them.
 - History keeps 24 hours and is saved, so after a relog in the same hour the
   panel is not blank.
 
@@ -45,20 +51,25 @@ nothing). A countdown needs one, so `clock.lua`:
 
 1. Tries `os.time()`. This is undocumented, so it is attempted inside `pcall`.
 2. Takes the `Date:` header from any Wiki API response.
-3. Takes `timestamp` (Unix seconds) from any chat event.
+3. Takes `timestamp` (Unix seconds) from a chat event, only if nothing better
+   is known.
 
 Once synced, it counts forward with `Event.Logic`, which the docs say runs at a
-fixed 50 ticks per second. Everything that schedules future work (web
+fixed 50 ticks per second. The logic tick counts from when the *client*
+started, so a sync made before the first tick is anchored to that first tick;
+otherwise the clock would jump ahead by the client's uptime. Everything that schedules future work (web
 requests, alert expiry) uses ticks, so it works even before the clock is known.
 
 ## Web request etiquette
 
-- One request on start, then one about 90 seconds after each hour change.
+- One request on start, then one 90–150 seconds after each hour change (the
+  extra spread varies per player so requests don't all land at once).
 - If the data is not for the current hour yet, or the request fails, it retries
-  every 5 minutes, never faster.
+  every 5 minutes, never faster. Without a clock it polls every 10 minutes.
 - Sends a descriptive `User-Agent`, as the Wiki's API page asks.
 
-That works out to roughly 1–3 requests per player per hour.
+Normally that is 1–2 requests per player per hour. While the Wiki is behind it
+can reach 12 an hour.
 
 ## Guideline risk review
 
@@ -82,7 +93,12 @@ That works out to roughly 1–3 requests per player per hour.
 4. **Fonts and markup.** Do `<col=...>` and `<br>` work in `ui.Text`? (The
    tutorial uses `<br>`; `<col>` is used in chat examples.)
 5. **Panel size.** The ribbon content layer's size isn't documented. The panel
-   is about 600 px tall; it may need a smaller font or a second page.
+   is about 630 px tall; it may need a smaller font or a second page.
+
+6. **Saved lists.** Does `PersistentDB:SetStructuredData` keep list keys as
+   numbers? `LoadHistory` copes either way, but it's worth confirming.
+7. **Two text lines on the shared plugin layer.** The docs say component
+   creation can fail on an ID clash; confirm the strip and alert line both appear.
 
 ## Ideas for later
 

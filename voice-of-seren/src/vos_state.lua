@@ -13,10 +13,21 @@
 --                the source could not say
 --   source     : short label for where it came from ("Prifddinas", "Wiki API", ...)
 --   observedAt : Unix time the plugin received it, or nil if the clock is unknown
+--   rank       : how trustworthy the source is; higher wins for the same hour
+--                (VosState.RANK below)
 
 local TimeUtil = require("src/timeutil")
 
 local VosState = {}
+
+-- Source trust levels. Game data is exact; the Prifddinas announcement comes
+-- from the game too; the Wiki API is crowdsourced and can be wrong or late.
+VosState.RANK = {
+    SAVED = 0,
+    WIKI_API = 1,
+    CHAT = 2,
+    GAME = 3,
+}
 
 local MAX_HISTORY = 24 -- one day of hourly entries
 local MAX_ACTIVE_CLANS = 2
@@ -76,13 +87,36 @@ function VosState.Report(reading)
         return false, {}
     end
 
+    local rank = reading.rank or 1
     local sameHour = current ~= nil
         and current.hourStart ~= nil
         and current.hourStart == reading.hourStart
 
     if sameHour then
-        -- Same hour: merge in any clan we did not have yet. This handles the
-        -- game announcing each district in a separate chat message.
+        if rank < current.rank then
+            -- A less trustworthy source (e.g. the Wiki API) never overrides
+            -- what the game itself said about this hour.
+            return false, {}
+        end
+
+        if rank > current.rank then
+            -- A more trustworthy source corrects this hour: take its clans.
+            local newClans = {}
+            for _, clan in ipairs(reading.clans) do
+                if not contains(current.clans, clan) then
+                    table.insert(newClans, clan)
+                end
+            end
+            current.clans = copyList(reading.clans)
+            current.rank = rank
+            current.source = reading.source
+            current.observedAt = reading.observedAt or current.observedAt
+            recordHistory(current.hourStart, current.clans)
+            return true, newClans
+        end
+
+        -- Same source quality: merge in any clan we did not have yet. This
+        -- handles the game announcing each district in a separate message.
         local newClans = {}
         for _, clan in ipairs(reading.clans) do
             if not contains(current.clans, clan) and #current.clans < MAX_ACTIVE_CLANS then
@@ -91,7 +125,6 @@ function VosState.Report(reading)
             end
         end
         if #newClans > 0 then
-            current.source = reading.source
             current.observedAt = reading.observedAt or current.observedAt
             recordHistory(current.hourStart, current.clans)
             return true, newClans
@@ -100,22 +133,17 @@ function VosState.Report(reading)
     end
 
     -- A different (newer, or undated) hour: replace the current reading.
-    local previousClans = current and current.clans or {}
-    local newClans = {}
-    for _, clan in ipairs(reading.clans) do
-        if not contains(previousClans, clan) then
-            table.insert(newClans, clan)
-        end
-    end
-
+    -- Every clan in it counts as new. A clan cannot hold the Voice two hours
+    -- running, so even a clan seen in an earlier hour is a fresh activation.
     current = {
         clans = copyList(reading.clans),
         hourStart = reading.hourStart,
         source = reading.source,
         observedAt = reading.observedAt,
+        rank = rank,
     }
     recordHistory(current.hourStart, current.clans)
-    return true, newClans
+    return true, copyList(reading.clans)
 end
 
 -- Returns the current reading (a copy), or nil if nothing is known.
@@ -175,19 +203,26 @@ function VosState.LoadHistory(savedHistory)
     if type(savedHistory) ~= "table" then
         return
     end
-    for _, entry in ipairs(savedHistory) do
+    -- pairs (not ipairs) in case storage returns the list with string keys;
+    -- recordHistory sorts the entries anyway.
+    for _, entry in pairs(savedHistory) do
         if type(entry) == "table" and type(entry.hourStart) == "number"
             and type(entry.clans) == "table" then
-            recordHistory(entry.hourStart, entry.clans)
+            local clans = {}
+            for _, clan in pairs(entry.clans) do
+                table.insert(clans, clan)
+            end
+            recordHistory(entry.hourStart, clans)
         end
     end
 end
 
 -- After a relog, the saved history may already contain this hour's Voice.
 -- Once the clock is known, this promotes that entry to "current" so the panel
--- is not blank until the next announcement. Returns true if it did.
+-- is not blank until the next announcement. It also replaces a reading that
+-- turned out to be for an older hour. Returns true if it did.
 function VosState.RestoreCurrentFromHistory(now)
-    if current ~= nil or now == nil or history[1] == nil then
+    if now == nil or history[1] == nil or VosState.IsCurrent(now) then
         return false
     end
     if history[1].hourStart ~= TimeUtil.HourStart(now) then
@@ -198,6 +233,7 @@ function VosState.RestoreCurrentFromHistory(now)
         hourStart = history[1].hourStart,
         source = "saved from earlier this hour",
         observedAt = nil,
+        rank = VosState.RANK.SAVED,
     }
     return true
 end
