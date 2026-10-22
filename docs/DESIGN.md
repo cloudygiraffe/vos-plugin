@@ -87,8 +87,10 @@ can reach 12 an hour.
 1. **Is there a game variable for the active districts?** Yes (October 22nd,
    2026): `ELFCITY_VOICE1_PLAYER` (varbit -25159), `ELFCITY_VOICE2_PLAYER`
    (-25160) and `ELFCITY_VOS_PLAYER_HOUR` (-26417), all in VarPlayer 4783.
-   Values 1 and 4 at 16:00 UTC while Cadarn and Iorwerth were active, so
-   clans are numbered alphabetically from 0 (Amlodd) to 7 (Trahaearn). Still to confirm: that they change on the
+   Values 1 and 4 at 16:00 UTC (Cadarn and Iorwerth), 2 and 3 at 17:00 UTC
+   (Crwys and Trahaearn): not alphabetical, so only seen pairs are decoded
+   until every number is pinned down. The hour drops to 0 on leaving the
+   city, so this source only works inside Prifddinas. Still to confirm: that they change on the
    hour, and whether they update away from Prifddinas.
 2. **Exact chat wording and type.** Is it one message per district or one for
    both? Which `ChatType`? Is it sent outside Prifddinas?

@@ -228,7 +228,7 @@ check(database.history ~= nil and #database.history == 2, "history is saved with
 
 -- The game's own Voice variables (ELFCITY_VOICE1/2_PLAYER, hour). A value
 -- left over from the previous hour (15) must be ignored...
-local voiceVars = { [-25159] = 0, [-25160] = 3, [-26417] = 15 }
+local voiceVars = { [-25159] = 2, [-25160] = 3, [-26417] = 15 }
 var = strict("var", {
     VarPlayer = strict("var.VarPlayer", {
         FromID = function(variableId)
@@ -238,14 +238,14 @@ var = strict("var", {
     }),
 })
 advanceSeconds(6)
-check(string.find(strip.content, "Amlodd", 1, true) == nil, "last hour's game values are ignored")
+check(string.find(strip.content, "Crwys", 1, true) == nil, "last hour's game values are ignored")
 
--- ...and this hour's values (16:00 UTC: Meilyr = 6, Trahaearn = 7) are used.
-voiceVars = { [-25159] = 6, [-25160] = 7, [-26417] = 16 }
-fire("VarTransmit", { var = { configName = "ELFCITY_VOICE2_PLAYER" }, oldValue = 3, newValue = 7 })
-check(string.find(strip.content, "Trahaearn", 1, true) ~= nil and string.find(strip.content, "Meilyr", 1, true) ~= nil,
+-- ...and this hour's values (16:00 UTC: 1 and 4 = Cadarn and Iorwerth) are used.
+voiceVars = { [-25159] = 1, [-25160] = 4, [-26417] = 16 }
+fire("VarTransmit", { var = { configName = "ELFCITY_VOICE2_PLAYER" }, oldValue = 3, newValue = 4 })
+check(string.find(strip.content, "Cadarn", 1, true) ~= nil and string.find(strip.content, "Iorwerth", 1, true) ~= nil,
     "strip shows the clans from the game's variables (got: " .. tostring(strip.content) .. ")")
-check(#chatLines == 1, "no second alert for Meilyr in the same hour")
+check(#chatLines == 1, "no new alert: Meilyr isn't in the game's pair")
 
 print(failures == 0 and "mock game test passed" or (failures .. " check(s) failed"))
 if failures > 0 then
