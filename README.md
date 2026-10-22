@@ -37,7 +37,7 @@ The plugin can learn the Voice three ways. It uses whichever ones you allow.
 
 | Source | Permission | Works outside Prifddinas? | Notes |
 |---|---|---|---|
-| Game data | none | yes (to confirm away from Prifddinas) | The game's own `ELFCITY_VOICE1_PLAYER` / `ELFCITY_VOICE2_PLAYER` variables (clans numbered alphabetically, 1 = Amlodd to 8 = Trahaearn) plus `ELFCITY_VOS_PLAYER_HOUR` (the UTC hour they're for). Found on the beta world on October 22nd, 2026. Best source: no permissions, instant. |
+| Game data | none | yes (to confirm away from Prifddinas) | The game's own `ELFCITY_VOICE1_PLAYER` / `ELFCITY_VOICE2_PLAYER` variables (clans numbered alphabetically, 0 = Amlodd to 7 = Trahaearn) plus `ELFCITY_VOS_PLAYER_HOUR` (the UTC hour they're for). Found on the beta world on October 22nd, 2026. Best source: no permissions, instant. |
 | RuneScape Wiki API | optional *web requests* (`httpAccess`) | yes | Uses `https://api.weirdgloop.org/runescape/vos`. Crowdsourced, so it can lag. Once the plugin knows the time, data for an older hour is shown as "waiting for this hour", not as current. The game's own announcement always overrides it. |
 | Prifddinas announcement | optional *chat access* (`chatAccess`) | no | Reads the game's own "The Voice of Seren is now active in the ... district." message. Only player-free system messages are accepted. |
 

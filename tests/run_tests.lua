@@ -337,14 +337,15 @@ end)
 
 local GameSource = require("src/sources/game_source")
 
-test("Game Voice values decode alphabetically, 1 = Amlodd to 8 = Trahaearn", function()
+test("Game Voice values decode alphabetically, 0 = Amlodd to 7 = Trahaearn", function()
     -- Seen on the beta world at 16:42 UTC, October 22nd, 2026: 1 and 4 while
-    -- Amlodd and Hefin had the Voice.
-    eq(table.concat(GameSource.Decode(1, 4), ","), "Amlodd,Hefin")
-    eq(table.concat(GameSource.Decode(8, 2), ","), "Trahaearn,Cadarn")
-    eq(GameSource.Decode(0, 4), nil, "0 means unknown")
+    -- Cadarn and Iorwerth had the Voice.
+    eq(table.concat(GameSource.Decode(1, 4), ","), "Cadarn,Iorwerth")
+    eq(table.concat(GameSource.Decode(7, 0), ","), "Trahaearn,Amlodd")
+    eq(GameSource.Decode(0, 0), nil, "all zero = not sent yet")
     eq(GameSource.Decode(3, 3), nil, "the same clan twice is not a valid Voice")
-    eq(GameSource.Decode(9, 1), nil, "out of range")
+    eq(GameSource.Decode(8, 1), nil, "out of range")
+    eq(GameSource.Decode(nil, 1), nil, "unreadable")
 end)
 
 --------------------------------------------------------------------------------

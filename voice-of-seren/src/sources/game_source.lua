@@ -9,9 +9,10 @@
 --   ELFCITY_VOICE2_PLAYER    varbit -25160 (VarPlayer 4783, bits 7-12)
 --   ELFCITY_VOS_PLAYER_HOUR  varbit -26417 (VarPlayer 4783, bits 13-18)
 --
--- On the beta world at 16:42 UTC the values were 1, 4 and 16 while Amlodd and
--- Hefin had the Voice: the hour is the UTC hour, and the clans are numbered
--- alphabetically from 1 (Amlodd) to 8 (Trahaearn). 0 means not known.
+-- On the beta world at 16:42 UTC the values were 1, 4 and 16 while Cadarn and
+-- Iorwerth had the Voice: the hour is the UTC hour, and the clans are numbered
+-- alphabetically from 0 (Amlodd) to 7 (Trahaearn). Since 0 is a real clan,
+-- an all-zero (not yet sent) value is caught by the "same clan twice" check.
 
 local Clock = require("src/clock")
 local TimeUtil = require("src/timeutil")
@@ -22,7 +23,8 @@ local GameSource = {}
 GameSource.LABEL = "game data"
 
 GameSource.CLAN_BY_NUMBER = {
-    "Amlodd", "Cadarn", "Crwys", "Hefin", "Iorwerth", "Ithell", "Meilyr", "Trahaearn",
+    [0] = "Amlodd", [1] = "Cadarn", [2] = "Crwys", [3] = "Hefin",
+    [4] = "Iorwerth", [5] = "Ithell", [6] = "Meilyr", [7] = "Trahaearn",
 }
 
 local VOICE1 = { domain = "VarPlayer", id = -25159, name = "ELFCITY_VOICE1_PLAYER" }
@@ -53,8 +55,11 @@ end
 -- Turns the raw values into a list of clan names, or nil if they aren't a
 -- valid pair. Pure; unit tested.
 function GameSource.Decode(voice1, voice2)
-    local first = GameSource.CLAN_BY_NUMBER[voice1 or 0]
-    local second = GameSource.CLAN_BY_NUMBER[voice2 or 0]
+    if voice1 == nil or voice2 == nil then
+        return nil
+    end
+    local first = GameSource.CLAN_BY_NUMBER[voice1]
+    local second = GameSource.CLAN_BY_NUMBER[voice2]
     if first == nil or second == nil or first == second then
         return nil
     end
