@@ -1,0 +1,11 @@
+{
+    "name": "Voice of Seren",
+    "version": "0.1.0",
+    "contactEmailAddress": "REPLACE_WITH_CONTACT_EMAIL@example.com",
+    "requiredDependencies": [],
+    "optionalDependencies": [],
+    "requiredPermissions": [],
+    "optionalPermissions": [ "httpAccess", "chatAccess" ],
+    "urls": { "weirdgloop": "https://api.weirdgloop.org" },
+    "hasRibbonIcon": true
+}

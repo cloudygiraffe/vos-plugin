@@ -1,0 +1,9 @@
+# Editor and OS clutter
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Packaged builds for mod.io uploads
+*.zip
