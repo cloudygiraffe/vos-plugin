@@ -5,6 +5,9 @@
 -- (ALT + the key under Esc). Copy the console output into an issue or message.
 --
 -- What it checks:
+--   0. The known Voice of Seren variables (ELFCITY_VOICE1/2_PLAYER and
+--      ELFCITY_VOS_PLAYER_HOUR): printed as "VOS VARS ..." now and on every
+--      change. Compare the numbers with the clans actually active.
 --   1. Whether os.time() exists in the plugin sandbox (a free clock).
 --   2. Whether the optional permissions are granted.
 --   3. Every VarPlayer / VarClient whose name looks Voice-of-Seren related,
@@ -172,10 +175,60 @@ end)
 -- Drive the scan from the server tick
 --------------------------------------------------------------------------------
 
-say("Scanning variable names. This takes a minute or two...")
+--------------------------------------------------------------------------------
+-- Watch the known Voice of Seren variables (from the client's `pan VarPlayer`
+-- list). Prints their values now and every time one changes, polled once per
+-- server tick so it doesn't depend on VarTransmit.
+--------------------------------------------------------------------------------
+
+local WATCH = {
+    { name = "ELFCITY_VOICE1_PLAYER",   domain = "VarPlayer", id = -25159 },
+    { name = "ELFCITY_VOICE2_PLAYER",   domain = "VarPlayer", id = -25160 },
+    { name = "ELFCITY_VOS_PLAYER_HOUR", domain = "VarPlayer", id = -26417 },
+    { name = "VOS_WEEKEND_ACTIVE_VOICE", domain = "VarPlayer", id = -43944 },
+    { name = "VOS_WEEKEND_NEXT_VOICE_MINUTES", domain = "VarClient", id = 6567 },
+}
+
+local function readWatched(entry)
+    local ok, value = pcall(function() return var[entry.domain].FromID(entry.id).value end)
+    if ok then return value end
+    return "unreadable"
+end
+
+local lastWatched = {}
+local function checkWatched(force)
+    local changed = false
+    for _, entry in ipairs(WATCH) do
+        local value = readWatched(entry)
+        if force or value ~= lastWatched[entry.name] then
+            lastWatched[entry.name] = value
+            changed = true
+        end
+    end
+    if changed then
+        local parts = {}
+        for _, entry in ipairs(WATCH) do
+            table.insert(parts, entry.name .. "=" .. tostring(lastWatched[entry.name]))
+        end
+        local unix = now()
+        say("VOS VARS" .. (unix and (" at unix " .. unix) or "") .. ": " .. table.concat(parts, "  "))
+    end
+end
+
+checkWatched(true)
+Event.ServerLogic.Subscribe("vosDiscoveryWatch", function()
+    checkWatched(false)
+end)
+
+-- The full variable-name scan is no longer needed now that the client's own
+-- list is available; set SCAN_NAMES = true to run it again.
+local SCAN_NAMES = false
+if SCAN_NAMES then
+    say("Scanning variable names. This takes a minute or two...")
+end
 -- Once the scan is finished, scanStep() returns false and the handler simply
 -- does nothing (unsubscribing from inside its own handler is not documented).
-local scanFinished = false
+local scanFinished = not SCAN_NAMES
 Event.ServerLogic.Subscribe("vosDiscoveryScan", function()
     if not scanFinished then
         scanFinished = not scanStep()
