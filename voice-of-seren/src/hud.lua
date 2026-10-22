@@ -18,6 +18,8 @@ local ALERT_SECONDS = 10
 
 local FONT = id.Font.MUSEO_SANS_15PT_REGULAR
 
+-- Creates the strip controller. Components are built lazily on first use
+-- (see EnsureBuilt), because the plugin layer may not exist yet at load time.
 function Hud.new()
     local self = setmetatable({}, Hud)
     self.strip = nil

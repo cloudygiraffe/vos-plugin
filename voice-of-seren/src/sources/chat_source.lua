@@ -3,9 +3,11 @@
 --
 -- When the Voice moves, the game posts a message such as
 --   "The Voice of Seren is now active in the Amlodd district."
--- The RuneScape Wiki notes this appears inside Prifddinas; it may not be shown
--- elsewhere. One message may name one district or both, so each message is
--- reported on its own and vos_state.lua merges readings for the same hour.
+-- The RuneScape Wiki notes this appears inside Prifddinas; whether it is also
+-- shown elsewhere is still to be checked on the beta world (it matters for
+-- alerts away from the city). One message may name one district or both, so
+-- each message is reported on its own and vos_state.lua merges readings for
+-- the same hour.
 --
 -- Permission: plugins only receive chat events if the player grants the
 -- optional "chatAccess" permission. Without it this source simply never fires.
@@ -65,8 +67,12 @@ local function isGameMessageType(chatType)
         or chatType == ChatType.TIMED_EVENT
 end
 
--- Handles one ChatMessage event. Calls onTime(unixSeconds) with the message
--- timestamp, and onReading(reading) if it was a Voice announcement.
+-- Handles one ChatMessage event.
+--   event     : the ChatMessage event (chatMessage, chatType,
+--               senderNameUnfiltered, timestamp in Unix seconds)
+--   onTime    : called with every message's timestamp (main.lua passes
+--               Clock.SyncIfUnknown, so chat only sets an unknown clock)
+--   onReading : called with a reading if the message was a Voice announcement
 function ChatSource.HandleEvent(event, onTime, onReading)
     if event == nil then
         return

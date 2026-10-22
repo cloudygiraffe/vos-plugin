@@ -8,7 +8,9 @@
 --    "district2":"Trahaearn","source":"alt1-crowdsourced"}
 --
 -- Notes:
---   * The data is crowdsourced, so it can lag behind the game. The timestamp
+--   * The data is crowdsourced (from Alt1 users standing in Prifddinas), so
+--     it can lag behind the game. On October 22nd, 2026 it was two days out of
+--     date, and there is no public way for this plugin to contribute readings. The timestamp
 --     says which hour it describes; the plugin only treats it as current if
 --     that hour matches the real clock. It also ranks lowest of the sources,
 --     so the game's own announcement always wins for the same hour.
@@ -76,7 +78,10 @@ function ApiSource.IsAllowed()
     return ok and granted == true
 end
 
--- Decides how long to wait before the next request.
+-- Decides how long to wait before the next request:
+--   clock unknown       -> every 10 minutes
+--   data is this hour's -> just after the next hour change (+ per-player spread)
+--   data is old/failed  -> retry in 5 minutes
 local function scheduleNext(dataIsCurrent)
     local delaySeconds
     local now = Clock.Now()
@@ -111,8 +116,11 @@ local function fail(message)
     scheduleNext(false)
 end
 
--- Called regularly (every server tick). Starts a request when one is due.
--- onReading(reading) is called with each successful result.
+-- Called regularly (every server tick). Starts a request when one is due and
+-- the player has granted httpAccess; at most one request is in flight.
+-- onReading(reading) is called with each successful result, even an
+-- out-of-date one (VosState keeps it as history and shows "waiting for this
+-- hour"). Failures are recorded for LastError() and retried later.
 function ApiSource.Update(onReading)
     if requestInFlight or not ApiSource.IsAllowed() then
         return

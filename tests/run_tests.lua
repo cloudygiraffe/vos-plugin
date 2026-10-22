@@ -1,6 +1,6 @@
 -- Unit tests for the parts of the plugin that do not need the game client.
 --
--- Run from the repository root with any Lua 5.1+ interpreter:
+-- Run from the repository root with Lua 5.4 (what CI uses):
 --     lua tests/run_tests.lua
 --
 -- The plugin's modules are loaded with require("src/..."), relative to the
@@ -324,11 +324,16 @@ test("Strip without a clock still shows the clans", function()
     eq(Display.StripText({ clans = { "Hefin", "Ithell" } }, true, nil, {}), "Voice of Seren: Hefin & Ithell")
 end)
 
-test("Help text appears only when nothing can read the Voice from anywhere", function()
-    eq(Display.HelpText(true, false, false, nil), "")
-    eq(Display.HelpText(true, false, false, "Wiki API timed out") ~= "", true)
-    eq(Display.HelpText(false, false, true), "")
-    eq(Display.HelpText(false, false, false) ~= "", true)
+test("Help text: web requests are suggested until granted, even with game data", function()
+    eq(Display.HelpText(true, false, false, nil), "", "web requests granted: nothing to say")
+    eq(Display.HelpText(true, false, true, nil), "")
+    eq(Display.HelpText(true, false, false, "Wiki API timed out") ~= "", true, "API problem shown")
+    -- Game data only works inside Prifddinas, so it must not hide the tip.
+    local withGame = Display.HelpText(false, false, true)
+    eq(string.find(withGame, "web requests", 1, true) ~= nil, true, "tip shown with game data")
+    eq(string.find(withGame, "Prifddinas", 1, true) ~= nil, true, "explains game data is city-only")
+    eq(string.find(Display.HelpText(false, true, true), "Chat access", 1, true), nil,
+        "no chat tip once chat access is granted")
 end)
 
 --------------------------------------------------------------------------------

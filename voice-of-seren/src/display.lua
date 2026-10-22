@@ -119,23 +119,33 @@ function Display.HistoryText(history, now, maxEntries)
     return table.concat(lines, "<br>")
 end
 
--- Advice shown when the plugin has no way to learn the Voice yet, or a note
--- about the last problem reaching the Wiki API (apiError, or nil).
-function Display.HelpText(httpAllowed, chatAllowed, gameConfigured, apiError)
+-- Tips for the bottom of the panel (at most 3 lines, the space panel.lua
+-- reserves), or a note about the last problem reaching the Wiki API.
+--   httpAllowed  : the optional "web requests" permission is granted
+--   chatAllowed  : the optional "chat access" permission is granted
+--   gameReadable : the game's own Voice variables can be read. They are only
+--                  kept up to date inside Prifddinas (observed on the beta
+--                  world, October 22nd, 2026), so they never replace the tip
+--                  about web requests, which is the only source that works
+--                  everywhere.
+--   apiError     : text of the last Wiki API problem, or nil
+-- Returns "" when there is nothing useful to say.
+function Display.HelpText(httpAllowed, chatAllowed, gameReadable, apiError)
     if httpAllowed and apiError then
         return colour(apiError .. ". Retrying in a few minutes.", MUTED_COLOUR)
     end
-    if httpAllowed or gameConfigured then
+    if httpAllowed then
         return ""
     end
-    local lines = {
-        "To see the Voice from anywhere, allow the plugin's optional",
-        "\"web requests\" permission in Plugin Hub > Manage.",
-    }
-    if chatAllowed then
-        table.insert(lines, "Until then, the Voice updates when you are in Prifddinas.")
+    local lines = {}
+    if gameReadable then
+        table.insert(lines, "In Prifddinas the Voice is read from the game. Elsewhere,")
     else
-        table.insert(lines, "Or allow \"chat access\" to read the Prifddinas announcement.")
+        table.insert(lines, "To see the Voice from anywhere,")
+    end
+    table.insert(lines, "allow the optional \"web requests\" permission (Plugin Hub > Manage).")
+    if not chatAllowed then
+        table.insert(lines, "\"Chat access\" also reads the city's own announcement.")
     end
     return colour(table.concat(lines, "<br>"), MUTED_COLOUR)
 end

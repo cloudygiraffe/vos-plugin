@@ -33,6 +33,7 @@ function Storage.LoadWatchedClans()
     return saved
 end
 
+-- Saves the set of watched clans (same shape as LoadWatchedClans returns).
 function Storage.SaveWatchedClans(watched)
     safely(function()
         return PersistentDB:SetStructuredData(KEY_WATCHED, watched)
@@ -50,12 +51,15 @@ function Storage.LoadHudEnabled()
     return saved
 end
 
+-- Saves whether the on-screen strip is shown.
 function Storage.SaveHudEnabled(enabled)
     safely(function()
         return PersistentDB:SetBool(KEY_HUD, enabled == true)
     end)
 end
 
+-- Returns the saved Voice history (list of { hourStart, clans }), or {}.
+-- VosState.LoadHistory validates each entry.
 function Storage.LoadHistory()
     local saved = safely(function()
         return PersistentDB:GetStructuredData(KEY_HISTORY)
@@ -66,6 +70,7 @@ function Storage.LoadHistory()
     return saved
 end
 
+-- Saves the Voice history from VosState.History().
 function Storage.SaveHistory(history)
     safely(function()
         return PersistentDB:SetStructuredData(KEY_HISTORY, history)
@@ -84,6 +89,7 @@ function Storage.LoadAlerted()
     return { hour = saved.hour, clans = saved.clans }
 end
 
+-- Saves the alert record ({ hour, clans }) from main.lua.
 function Storage.SaveAlerted(alerted)
     safely(function()
         return PersistentDB:SetStructuredData(KEY_ALERTED, alerted)

@@ -2,7 +2,8 @@
 
 How the Voice of Seren plugin works, why it is built this way, and what is
 still unknown. Written October 22nd, 2026, against the RS3 Client API docs at
-developer.runescape.com.
+developer.runescape.com, and updated the same day with what was observed on
+the plugin beta world (see [Findings on the beta world](#findings-on-the-beta-world)).
 
 ## Data flow
 
@@ -20,8 +21,12 @@ Every source produces the same thing, a **reading**:
 
 ```lua
 { clans = { "Iorwerth", "Cadarn" }, hourStart = 1792681200,
-  source = "RuneScape Wiki API", observedAt = 1792683420 }
+  source = "RuneScape Wiki API", observedAt = 1792683420,
+  rank = VosState.RANK.WIKI_API }
 ```
+
+`hourStart` and `observedAt` are nil when the source can't say (for example,
+game data read before the plugin knows the time).
 
 `vos_state.lua` is the only place that decides what is "current". Because of
 that, adding or removing a source never touches the UI code.
@@ -50,6 +55,8 @@ The API documents no clock function (`Plugin`, `World` and the core pages have
 nothing). A countdown needs one, so `clock.lua`:
 
 1. Tries `os.time()`. This is undocumented, so it is attempted inside `pcall`.
+   **Not available** in the sandbox (observed on the beta world, October 22nd,
+   2026), but kept in case that changes.
 2. Takes the `Date:` header from any Wiki API response.
 3. Takes `timestamp` (Unix seconds) from a chat event, only if nothing better
    is known.
@@ -82,28 +89,39 @@ can reach 12 an hour.
 | `chatAccess` | Subject to review | Read-only, filtered to the announcement; writes only the plugin's own alert |
 | Predicting future hours | **Not built on purpose** | The rotation has rules (two-hour cooldown, 50% return chance), but showing likely next clans could count as predicting future state |
 
-## Open questions (answer on the beta world)
+## Findings on the beta world
 
-1. **Is there a game variable for the active districts?** Yes (October 22nd,
-   2026): `ELFCITY_VOICE1_PLAYER` (varbit -25159), `ELFCITY_VOICE2_PLAYER`
-   (-25160) and `ELFCITY_VOS_PLAYER_HOUR` (-26417), all in VarPlayer 4783.
-   Values 1 and 4 at 16:00 UTC (Cadarn and Iorwerth), 2 and 3 at 17:00 UTC
-   (Crwys and Trahaearn): not alphabetical, so only seen pairs are decoded
-   until every number is pinned down. The hour drops to 0 on leaving the
-   city, so this source only works inside Prifddinas. Still to confirm: that they change on the
-   hour, and whether they update away from Prifddinas.
-2. **Exact chat wording and type.** Is it one message per district or one for
-   both? Which `ChatType`? Is it sent outside Prifddinas?
-3. **Is `os.time()` available?** If yes, the clock works with no permissions.
-4. **Fonts and markup.** Do `<col=...>` and `<br>` work in `ui.Text`? (The
-   tutorial uses `<br>`; `<col>` is used in chat examples.)
-5. **Panel size.** The ribbon content layer's size isn't documented. The panel
-   is about 630 px tall; it may need a smaller font or a second page.
+Observed on October 22nd, 2026 (beta client of that date):
 
-6. **Saved lists.** Does `PersistentDB:SetStructuredData` keep list keys as
+| Question | Answer |
+|---|---|
+| Is there a game variable for the active districts? | **Yes.** `ELFCITY_VOICE1_PLAYER` (varbit -25159), `ELFCITY_VOICE2_PLAYER` (-25160) and `ELFCITY_VOS_PLAYER_HOUR` (-26417), all packed in VarPlayer 4783 (`ELFCITY_TEMP_2`). Found with the console command `pan VarPlayer`, which copies the client's whole variable list to the clipboard. |
+| Do they change on the hour? | **Yes**, while standing in Prifddinas (16:00 → 17:00 UTC). |
+| Do they work outside Prifddinas? | **No.** On leaving the city the hour dropped to 0 and the clan numbers stopped updating. |
+| How are clans numbered? | **Not alphabetically**, and not in any clan order found in the variable list. Seen: 1 + 4 = Cadarn and Iorwerth (16:00 UTC), 2 + 3 = Crwys and Trahaearn (17:00 UTC). Only seen pairs are decoded (`GameSource.KNOWN_PAIRS`). |
+| Is `os.time()` available? | **No.** |
+| Do `<col=…>` and `<br>` render in `ui.Text`? | **Yes.** |
+| Does the strip appear and update by itself? | **Yes.** It switched clans at the hour with no permissions. |
+| Is the Wiki API current? | **Not reliably.** It was two days behind all day. |
+| `plugin.json` | The beta client rejects empty `requiredDependencies` / `optionalDependencies` lists ("unexpected json Array, expected a json Object"). Leave them out. |
+
+## Open questions
+
+1. **A source that works outside Prifddinas.** Alerts exist to bring the
+   player back to the city, so they need one. Options:
+   - Check whether the chat announcement is shown outside Prifddinas.
+   - Ask Weird Gloop whether plugin users could submit readings, since the
+     plugin reads the Voice for free inside the city. That would keep the API
+     fresh for everyone. There's no public submission endpoint today.
+2. **Pin down each clan number.** Each hour observed in Prifddinas adds a pair.
+   With enough pairs every number resolves to one clan, and `KNOWN_PAIRS` can
+   become a number → clan table.
+3. **Exact chat wording and type.** One message per district or one for both?
+   Which `ChatType`? (`tools/vos-discovery` prints these as `CHAT` lines.)
+4. **Panel size.** The ribbon content layer's size isn't documented. The panel
+   is about 650 px tall and may need a smaller font or a second page.
+5. **Saved lists.** Does `PersistentDB:SetStructuredData` keep list keys as
    numbers? `LoadHistory` copes either way, but it's worth confirming.
-7. **Two text lines on the shared plugin layer.** The docs say component
-   creation can fail on an ID clash; confirm the strip and alert line both appear.
 
 ## Ideas for later
 

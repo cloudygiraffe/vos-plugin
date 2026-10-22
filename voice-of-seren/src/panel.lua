@@ -12,7 +12,8 @@
 --   "Alert me when the Voice is in:" checkboxes, one per clan
 --   on/off checkbox for the on-screen strip
 --   the last few hours
---   tips, if the plugin has no way to read the Voice yet
+--   tips (how to keep the Voice updated outside Prifddinas), or the last
+--   Wiki API problem
 
 local Clans = require("src/clans")
 local Display = require("src/display")
@@ -25,10 +26,12 @@ local LINE = 20       -- height of a one-line text row
 local GAP = 4         -- space between rows
 local EFFECT_ROWS = 4 -- effect lines reserved per clan card
 local HISTORY_ROWS = 4
+local HELP_ROWS = 4   -- Display.HelpText returns up to 3 lines; one spare for wrapping
 
--- callbacks:
---   onWatchChanged(clanName, isWatched)
---   onHudToggled(isEnabled)
+-- Creates the panel controller. Nothing is drawn until Build() is called.
+-- callbacks (called when the player changes something):
+--   onWatchChanged(clanName, isWatched) : a clan checkbox was ticked/unticked
+--   onHudToggled(isEnabled)             : "Show on-screen strip" was toggled
 function Panel.new(callbacks)
     local self = setmetatable({}, Panel)
     self.callbacks = callbacks
@@ -37,7 +40,8 @@ function Panel.new(callbacks)
     return self
 end
 
--- Adds a full-width text row at vertical position y and returns it.
+-- Adds a full-width text component `rows` lines tall at vertical position y
+-- (pixels from the top of `parent`) and returns it.
 local function addText(parent, y, rows)
     local text = ui.Text.new(parent)
     text:SetPos(0, y)
@@ -51,7 +55,8 @@ local function addText(parent, y, rows)
     return text
 end
 
--- Adds a checkbox at (x as a fraction of the width, y in pixels).
+-- Adds a checkbox at (x as a fraction of the width, y in pixels) and calls
+-- onToggle(isTicked) whenever the player clicks it. Returns the component.
 local function addCheck(parent, xFraction, y, label, ticked, onToggle)
     local check = ui.Check.new(parent)
     check:SetPos(0, y, xFraction, 0.0)
@@ -69,8 +74,11 @@ local function addCheck(parent, xFraction, y, label, ticked, onToggle)
 end
 
 -- Creates every component on the layer the game provided.
+--   root       : the empty layer from the ContentLayerReady event
 --   watched    : set of watched clan names (to tick the boxes)
 --   hudEnabled : whether the on-screen strip is on
+-- Rows are stacked top to bottom with fixed pixel heights; components fill
+-- the panel's width, whatever size the player gives the window.
 function Panel:Build(root, watched, hudEnabled)
     self.root = root
     self.parts = {}
@@ -122,7 +130,7 @@ function Panel:Build(root, watched, hudEnabled)
     parts.history = addText(root, y, HISTORY_ROWS)
     y = y + LINE * HISTORY_ROWS + GAP
 
-    parts.help = addText(root, y, 3)
+    parts.help = addText(root, y, HELP_ROWS)
 end
 
 -- True if the panel is built and currently on screen.
@@ -134,9 +142,9 @@ function Panel:IsVisible()
     return ok and visible == true
 end
 
--- Fills in the panel from the latest information. `view` is a table built by
--- main.lua with: current, isCurrent, now, history, httpAllowed, chatAllowed,
--- gameConfigured.
+-- Fills in the panel from the latest information. `view` is the table built
+-- by buildView() in main.lua (current, isCurrent, now, history, httpAllowed,
+-- chatAllowed, gameReadable, apiError). Does nothing while the window is closed.
 function Panel:Refresh(view)
     if not self:IsVisible() then
         return
@@ -163,7 +171,7 @@ function Panel:Refresh(view)
 
         parts.source.content = Display.SourceLine(view.current, view.now)
         parts.history.content = Display.HistoryText(view.history, view.now, HISTORY_ROWS)
-        parts.help.content = Display.HelpText(view.httpAllowed, view.chatAllowed, view.gameConfigured, view.apiError)
+        parts.help.content = Display.HelpText(view.httpAllowed, view.chatAllowed, view.gameReadable, view.apiError)
     end)
 end
 

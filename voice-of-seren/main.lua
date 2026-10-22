@@ -1,16 +1,27 @@
--- Voice of Seren
+-- main.lua (Voice of Seren plugin entry point)
+--
 -- Shows which two Prifddinas clans have the Voice of Seren right now, what
--- they boost, and how long until it moves, from anywhere in the game.
--- Optionally alerts you when a clan you care about becomes active.
+-- they boost, and how long until it moves. Optionally alerts you when a clan
+-- you care about becomes active.
 --
 -- How the pieces fit together (see docs/DESIGN.md for more):
 --
---   sources/*.lua  --readings-->  vos_state.lua  --view-->  hud.lua, panel.lua
---        ^                                                     (display.lua
---        |                                                      builds text)
---   game events (chat, variables, web responses, ticks)
+--   sources/game_source.lua  (game variables; inside Prifddinas only)
+--   sources/chat_source.lua  (Prifddinas announcement; optional chatAccess)
+--   sources/api_source.lua   (RuneScape Wiki API; optional httpAccess)
+--          |
+--          | readings: { clans, hourStart, source, observedAt, rank }
+--          v
+--   vos_state.lua  --view-->  display.lua (text)  -->  hud.lua (strip),
+--                                                      panel.lua (window)
 --
--- This file only wires events to modules. It holds no Voice logic itself.
+-- This file only wires game events to those modules and owns the player's
+-- settings (watched clans, strip on/off, alerts already shown). It holds no
+-- Voice logic itself.
+--
+-- Every call into the game API that is not guaranteed by the docs is wrapped
+-- in pcall, so a missing permission or an API change degrades the plugin
+-- instead of stopping it.
 
 local Clock = require("src/clock")
 local TimeUtil = require("src/timeutil")
@@ -42,6 +53,8 @@ local alerted = Storage.LoadAlerted() -- { hour = number|nil, clans = { Iorwerth
 -- Helpers
 --------------------------------------------------------------------------------
 
+-- True if the player granted `permission` (a PluginPermissions value).
+-- Never errors, even if the API call does.
 local function hasPermission(permission)
     local ok, granted = pcall(function()
         return Plugin.HasPermission(permission)
@@ -49,7 +62,13 @@ local function hasPermission(permission)
     return ok and granted == true
 end
 
--- Everything the strip and panel need, gathered in one place.
+-- Everything the strip and panel need, gathered in one place. Fields:
+--   now, current, isCurrent, history : see Clock and VosState
+--   httpAllowed, chatAllowed          : optional permissions granted
+--   gameReadable                      : game variables can be read (true
+--                                       whenever the game data source exists;
+--                                       only current inside Prifddinas)
+--   apiError                          : last Wiki API problem, or nil
 local function buildView()
     local now = Clock.Now()
     return {
@@ -59,7 +78,7 @@ local function buildView()
         history = VosState.History(),
         httpAllowed = hasPermission(PluginPermissions.httpAccess),
         chatAllowed = hasPermission(PluginPermissions.chatAccess),
-        gameConfigured = GameSource.IsConfigured(),
+        gameReadable = GameSource.IsConfigured(),
         apiError = ApiSource.LastError(),
     }
 end
@@ -69,13 +88,18 @@ hud:SetEnabled(hudEnabled)
 
 local panel -- created below, after its callbacks are defined
 
+-- Redraws the strip and (if open) the panel from the current state.
 local function refreshUi()
     local view = buildView()
     hud:SetText(Display.StripText(view.current, view.isCurrent, view.now, watchedClans))
     panel:Refresh(view)
 end
 
--- Shows an alert for each newly active clan the player is watching.
+-- Shows an alert for each newly active clan the player is watching: a gold
+-- line under the strip and, with chat access, a line in the chat box. Each
+-- clan alerts at most once per hour; the record is saved so a reload or relog
+-- in the same hour doesn't repeat it.
+--   newClans : list of clan names that just became active (from VosState.Report)
 local function alertFor(newClans)
     local now = Clock.Now()
     if not VosState.IsCurrent(now) then
@@ -104,7 +128,9 @@ local function alertFor(newClans)
     end
 end
 
--- Every source reports through here.
+-- Every source reports through here. VosState decides whether the reading
+-- changes anything (see its ranking rules); if so, history is saved, alerts
+-- are raised for newly active clans and the UI is redrawn.
 local function handleReading(reading)
     local changed, newClans = VosState.Report(reading)
     if changed then
@@ -190,7 +216,9 @@ Event.VarTransmit.Subscribe("vosVars", function(event)
     GameSource.HandleVarTransmit(event, handleReading)
 end)
 
--- Fetch straight away when the player grants web access.
+-- Fetch straight away when the player grants web access. The docs don't say
+-- whether permissionName is the string "httpAccess" or the enum value, so
+-- both are accepted.
 Event.OptionalPermissionChanged.Subscribe("vosPermissions", function(event)
     local isHttp = event.permissionName == "httpAccess"
         or event.permissionName == PluginPermissions.httpAccess
@@ -201,7 +229,8 @@ Event.OptionalPermissionChanged.Subscribe("vosPermissions", function(event)
 end)
 
 --------------------------------------------------------------------------------
--- Start-up
+-- Start-up: try the free clock, read the game variables once (they may not be
+-- readable yet before login; the server-tick poll retries), draw the UI.
 --------------------------------------------------------------------------------
 
 Clock.TrySystemClock()

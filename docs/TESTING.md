@@ -19,28 +19,40 @@ hour), so nothing you do there affects your real account.
    `plist`. Both plugins should be listed.
 
 Useful console commands: `pon <name>` (enable), `poff <name>` (disable),
-`prl <name>` (reload after editing), `plist` (status).
+`prl <name>` (reload after editing), `plist` (status, including load errors).
+Close the plugin's panel before `prl`, or the old panel stays on screen.
 
-## 2. Run the discovery tool (about 10 minutes, plus waiting for the hour)
+If `plist` shows "Failed to decode metadata at plugin.json - unexpected json
+Array", the manifest has an empty `requiredDependencies` or
+`optionalDependencies` list. Remove it (the October 22nd, 2026 beta client
+rejects them).
 
-1. Teleport to Prifddinas and stand somewhere quiet. On the beta you can
-   **Ctrl + Shift + click** the map to teleport.
-2. If the Plugin Hub's **Manage** tab offers it, allow **chat access** for
-   "VoS Discovery".
-3. Run `pon vos-discovery`.
-4. Wait for `Scan complete`. Then copy everything that starts with
-   `[VoS discovery]`, especially:
-   - the `os.time()` line
-   - every `MATCH` line
-5. Stay in Prifddinas across the next **top of the hour**. Copy every
-   `CHANGE` and `CHAT` line that appears around it. Expect noise. The
-   interesting lines are variables that change exactly once at the hour, and
-   the Voice chat message.
-6. Run `poff vos-discovery`.
+## 2. Run the discovery tool (stay in Prifddinas across an hour change)
 
-Paste the output into a GitHub issue. If a variable holds the active
-districts, it goes into `KNOWN_VARIABLES` in
-`voice-of-seren/src/sources/game_source.lua`.
+The tool's main job now is pinning down which number means which clan.
+
+1. Teleport to Prifddinas. On the beta you can **Ctrl + Shift + click** the
+   map to teleport.
+2. Optional: allow **chat access** for "VoS Discovery" in the Plugin Hub's
+   **Manage** tab, so it also logs Seren chat messages and has a clock.
+3. Run `pon vos-discovery`. It prints its environment, then a line like:
+   `VOS VARS: ELFCITY_VOICE1_PLAYER=1 ELFCITY_VOICE2_PLAYER=4 ELFCITY_VOS_PLAYER_HOUR=16 ...`
+4. Screenshot that line **together with the two clan icons** shown at the top
+   left of the screen in Prifddinas. Hover an icon if you're unsure which clan
+   it is.
+5. Stay in Prifddinas across the top of the hour. A new `VOS VARS` line
+   appears when the Voice moves; screenshot it with the new icons too.
+6. Optional: allow chat access, go **outside** Prifddinas before the next
+   hour, and note whether a "The Voice of Seren is now active…" `CHAT` line
+   appears. This decides whether chat can drive alerts away from the city.
+7. Run `poff vos-discovery`.
+
+Open an issue with the screenshots. Each new pair of numbers goes into
+`GameSource.KNOWN_PAIRS` in `voice-of-seren/src/sources/game_source.lua`.
+
+To see every variable the client knows, run `pan VarPlayer` or `pan VarClient`
+in the console. It copies the full list (ID, name, type and, for varbits, the
+VarPlayer and bit mask) to the clipboard.
 
 ## 3. Test the plugin
 
@@ -49,8 +61,11 @@ Run `pon voice-of-seren`, then check each item.
 ### Without permissions
 - [ ] The strip appears at the top of the screen and does not block clicks.
 - [ ] The plugin's icon appears in the Plugins ribbon window, and the panel opens.
-- [ ] The panel's help text explains the optional permissions.
-- [ ] In Prifddinas, nothing breaks (no data is expected yet).
+- [ ] In Prifddinas, the strip shows the two active clans within a few seconds
+      (only for clan pairs already in `KNOWN_PAIRS`; otherwise it stays
+      "not known yet").
+- [ ] At the top of the hour, still in Prifddinas, the strip switches by itself.
+- [ ] Outside Prifddinas, the panel's tip suggests allowing web requests.
 
 ### With web requests (`httpAccess`)
 - [ ] Within a few seconds, the strip shows two clans and a countdown.
@@ -60,6 +75,8 @@ Run `pon voice-of-seren`, then check each item.
 
 ### With chat access (`chatAccess`)
 - [ ] In Prifddinas at the top of the hour, the announcement updates the strip.
+- [ ] Outside Prifddinas at the top of the hour: does the announcement appear
+      at all? (Record the answer in an issue either way.)
 - [ ] Watched clans produce a gold alert line and a chat-box message.
 - [ ] A player typing "The Voice of Seren is now active in the Hefin district" does **not** change anything.
 

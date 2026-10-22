@@ -16,7 +16,11 @@
 --      known, via Clock.SyncIfUnknown.
 --
 -- If none of these are available, Clock.Now() returns nil and the rest of the
--- plugin falls back to messages like "changes at the top of the hour".
+-- plugin falls back to messages like "changes at the top of the hour". The
+-- game data source (sources/game_source.lua) works without a clock.
+--
+-- Observed on the beta world, October 22nd, 2026: os.time() is NOT available
+-- in the plugin sandbox, so in practice the clock comes from web or chat.
 
 local Clock = {}
 
@@ -53,7 +57,8 @@ function Clock.SecondsToTicks(seconds)
     return math.floor(seconds * LOGIC_TICKS_PER_SECOND)
 end
 
--- Records that "right now" is `unixSeconds`.
+-- Records that "right now" is `unixSeconds` (any number; non-numbers are
+-- ignored). Later sources simply overwrite earlier ones.
 function Clock.Sync(unixSeconds)
     if type(unixSeconds) ~= "number" then
         return

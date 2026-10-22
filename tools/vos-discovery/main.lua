@@ -1,40 +1,66 @@
--- VoS Discovery (developer tool, never meant for the Plugin Hub)
+-- VoS Discovery (developer tool; never submit this to the Plugin Hub)
 --
--- Run this on the plugin beta world to answer the open questions the Voice of
--- Seren plugin depends on. Everything is printed to the client console
--- (ALT + the key under Esc). Copy the console output into an issue or message.
+-- Run on the plugin beta world to collect what the Voice of Seren plugin
+-- needs to know about the game. Everything is printed to the client console
+-- (Alt + the key under Esc). Copy the console output into an issue.
 --
--- What it checks:
---   0. The known Voice of Seren variables (ELFCITY_VOICE1/2_PLAYER and
---      ELFCITY_VOS_PLAYER_HOUR): printed as "VOS VARS ..." now and on every
---      change. Compare the numbers with the clans actually active.
---   1. Whether os.time() exists in the plugin sandbox (a free clock).
---   2. Whether the optional permissions are granted.
---   3. Every VarPlayer / VarClient whose name looks Voice-of-Seren related,
---      with its current value.
---   4. Every variable that changes in the minute around the top of the hour
---      (when the Voice moves). Stand in Prifddinas across an hour change.
---   5. Any chat message mentioning "Seren", with its chat type and wording
---      (needs the optional chatAccess permission).
+-- What it prints, in order:
+--   1. Environment: whether os.time() exists in the plugin sandbox, and
+--      whether the optional permissions are granted.
+--   2. "VOS VARS ..." lines: the known Voice variables (ELFCITY_VOICE1/2_PLAYER,
+--      ELFCITY_VOS_PLAYER_HOUR, plus the VoS-weekend ones), once at load and
+--      again whenever any of them changes. This is the main job now: stand in
+--      Prifddinas across an hour change and note which two clans the city
+--      shows, to pin down which number means which clan
+--      (voice-of-seren/src/sources/game_source.lua, KNOWN_PAIRS).
+--   3. "CHANGE ..." lines: any variable that changes within 45 seconds of the
+--      top of the hour (needs a clock: os.time() or a chat timestamp), plus
+--      changes to variables found by the name scan.
+--   4. "CHAT ..." lines: chat messages mentioning "Seren", with their chat
+--      type, sender and timestamp (needs the optional chatAccess permission).
+--      Useful to check whether the announcement is shown outside Prifddinas.
+--   5. Optional (SCAN_NAMES = true): a slow scan of every VarPlayer/VarClient
+--      ID for Voice-related names. No longer needed: the console commands
+--      `pan VarPlayer` / `pan VarClient` copy the client's full variable list
+--      to the clipboard.
+--
+-- Status: findings so far are recorded in docs/DESIGN.md ("Findings on the
+-- beta world").
 
-local KEYWORDS = {
+--------------------------------------------------------------------------------
+-- Settings
+--------------------------------------------------------------------------------
+
+local SCAN_NAMES = false          -- set to true to run the slow name scan (5)
+local KEYWORDS = {                -- name fragments the scan looks for
     "VOICE", "SEREN", "VOS", "PRIF", "CLAN", "DISTRICT", "ELF",
     "AMLODD", "CADARN", "CRWYS", "HEFIN", "IORWERTH", "ITHELL", "MEILYR", "TRAHAEARN",
 }
 local DOMAINS = { "VarPlayer", "VarClient" }
-local IDS_PER_TICK = 600          -- how much to scan per server tick
+local IDS_PER_TICK = 600          -- IDs scanned per server tick
 local MAX_CONSECUTIVE_MISSES = 5000
 local HARD_ID_LIMIT = 150000
-local HOUR_WINDOW_SECONDS = 45    -- log changes this close to the hour
+local HOUR_WINDOW_SECONDS = 45    -- log every change this close to the hour
+
+-- Variables printed as "VOS VARS" (from the client's `pan` lists).
+local WATCH = {
+    { name = "ELFCITY_VOICE1_PLAYER",          domain = "VarPlayer", id = -25159 },
+    { name = "ELFCITY_VOICE2_PLAYER",          domain = "VarPlayer", id = -25160 },
+    { name = "ELFCITY_VOS_PLAYER_HOUR",        domain = "VarPlayer", id = -26417 },
+    { name = "VOS_WEEKEND_ACTIVE_VOICE",       domain = "VarPlayer", id = -43944 },
+    { name = "VOS_WEEKEND_NEXT_VOICE_MINUTES", domain = "VarClient", id = 6567 },
+}
 
 local function say(...)
     print("[VoS discovery]", ...)
 end
 
 --------------------------------------------------------------------------------
--- 1 and 2: environment
+-- 1: environment, and a simple clock for time-stamping output
 --------------------------------------------------------------------------------
 
+-- clockUnix is the Unix time at logic tick clockTick (0 means "anchor to the
+-- first tick seen"); latestTick is updated 50 times a second.
 local clockUnix, clockTick, latestTick = nil, nil, 0
 local okTime, osTime = pcall(function() return os and os.time and os.time() end)
 if okTime and type(osTime) == "number" then
@@ -44,6 +70,7 @@ else
     say("os.time() is NOT available (" .. tostring(osTime) .. ")")
 end
 
+-- "granted", "not granted" or "unknown" (if the API call fails).
 local function permissionState(permission)
     local ok, granted = pcall(function() return Plugin.HasPermission(permission) end)
     if not ok then return "unknown" end
@@ -52,6 +79,7 @@ end
 say("httpAccess:", permissionState(PluginPermissions.httpAccess))
 say("chatAccess:", permissionState(PluginPermissions.chatAccess))
 
+-- Current Unix time, or nil if no clock source has been seen yet.
 local function now()
     if clockUnix == nil then return nil end
     return clockUnix + (latestTick - clockTick) / 50
@@ -65,10 +93,50 @@ Event.Logic.Subscribe("vosDiscoveryClock", function(event)
 end)
 
 --------------------------------------------------------------------------------
--- 3: scan variable names
+-- 2: watch the known Voice variables ("VOS VARS")
+-- Polled every server tick rather than relying on VarTransmit, whose naming
+-- of varbits isn't documented.
 --------------------------------------------------------------------------------
 
-local matches = {} -- configName -> { domain = ..., id = ... }
+-- Reads a watched variable, or returns "unreadable".
+local function readWatched(entry)
+    local ok, value = pcall(function() return var[entry.domain].FromID(entry.id).value end)
+    if ok then return value end
+    return "unreadable"
+end
+
+local lastWatched = {}
+
+-- Prints one "VOS VARS" line if any watched value changed (or if `force`).
+local function checkWatched(force)
+    local changed = false
+    for _, entry in ipairs(WATCH) do
+        local value = readWatched(entry)
+        if force or value ~= lastWatched[entry.name] then
+            lastWatched[entry.name] = value
+            changed = true
+        end
+    end
+    if changed then
+        local parts = {}
+        for _, entry in ipairs(WATCH) do
+            table.insert(parts, entry.name .. "=" .. tostring(lastWatched[entry.name]))
+        end
+        local unix = now()
+        say("VOS VARS" .. (unix and (" at unix " .. unix) or "") .. ": " .. table.concat(parts, "  "))
+    end
+end
+
+checkWatched(true)
+Event.ServerLogic.Subscribe("vosDiscoveryWatch", function()
+    checkWatched(false)
+end)
+
+--------------------------------------------------------------------------------
+-- 5 (optional): scan variable names
+--------------------------------------------------------------------------------
+
+local matches = {} -- configName -> { domain = ..., id = ... }, filled by the scan
 
 local function nameMatches(name)
     local upper = string.upper(name or "")
@@ -80,6 +148,7 @@ local function nameMatches(name)
     return false
 end
 
+-- One-line description of a variable for the console.
 local function describe(variable)
     local ok, value = pcall(function() return variable.value end)
     local okType, valueType = pcall(function() return variable.valueType end)
@@ -89,6 +158,7 @@ local function describe(variable)
         tostring(variable.isVarBit))
 end
 
+-- The variable with this ID, or nil if there isn't one.
 local function lookup(domain, variableId)
     local ok, variable = pcall(function() return var[domain].FromID(variableId) end)
     if ok then return variable end
@@ -103,6 +173,7 @@ for _, domain in ipairs(DOMAINS) do
     table.insert(jobs, { domain = domain, nextId = -1, step = -1, misses = 0, found = 0 })
 end
 
+-- Scans up to IDS_PER_TICK IDs. Returns false once every job is finished.
 local function scanStep()
     local job = jobs[1]
     if job == nil then return false end
@@ -133,10 +204,23 @@ local function scanStep()
     return true
 end
 
+if SCAN_NAMES then
+    say("Scanning variable names. This takes a minute or two...")
+end
+-- Once finished, the handler does nothing (unsubscribing from inside its own
+-- handler is not documented).
+local scanFinished = not SCAN_NAMES
+Event.ServerLogic.Subscribe("vosDiscoveryScan", function()
+    if not scanFinished then
+        scanFinished = not scanStep()
+    end
+end)
+
 --------------------------------------------------------------------------------
--- 4: variables that change around the top of the hour
+-- 3: variables that change around the top of the hour
 --------------------------------------------------------------------------------
 
+-- True if unixSeconds is within HOUR_WINDOW_SECONDS of an hour boundary.
 local function nearHourChange(unixSeconds)
     if unixSeconds == nil then return false end
     local intoHour = math.floor(unixSeconds) % 3600
@@ -155,10 +239,11 @@ Event.VarTransmit.Subscribe("vosDiscoveryVars", function(event)
 end)
 
 --------------------------------------------------------------------------------
--- 5: chat messages mentioning Seren
+-- 4: chat messages mentioning Seren (only delivered with chatAccess)
 --------------------------------------------------------------------------------
 
 Event.ChatMessage.Subscribe("vosDiscoveryChat", function(event)
+    -- A chat timestamp is also a clock, if os.time() wasn't available.
     if clockUnix == nil and type(event.timestamp) == "number" then
         clockUnix, clockTick = event.timestamp, latestTick
         say("Clock learned from chat timestamp:", event.timestamp)
@@ -168,69 +253,5 @@ Event.ChatMessage.Subscribe("vosDiscoveryChat", function(event)
         say("CHAT type=" .. tostring(event.chatType),
             "sender='" .. tostring(event.senderNameUnfiltered) .. "'",
             "time=" .. tostring(event.timestamp), "text=" .. text)
-    end
-end)
-
---------------------------------------------------------------------------------
--- Drive the scan from the server tick
---------------------------------------------------------------------------------
-
---------------------------------------------------------------------------------
--- Watch the known Voice of Seren variables (from the client's `pan VarPlayer`
--- list). Prints their values now and every time one changes, polled once per
--- server tick so it doesn't depend on VarTransmit.
---------------------------------------------------------------------------------
-
-local WATCH = {
-    { name = "ELFCITY_VOICE1_PLAYER",   domain = "VarPlayer", id = -25159 },
-    { name = "ELFCITY_VOICE2_PLAYER",   domain = "VarPlayer", id = -25160 },
-    { name = "ELFCITY_VOS_PLAYER_HOUR", domain = "VarPlayer", id = -26417 },
-    { name = "VOS_WEEKEND_ACTIVE_VOICE", domain = "VarPlayer", id = -43944 },
-    { name = "VOS_WEEKEND_NEXT_VOICE_MINUTES", domain = "VarClient", id = 6567 },
-}
-
-local function readWatched(entry)
-    local ok, value = pcall(function() return var[entry.domain].FromID(entry.id).value end)
-    if ok then return value end
-    return "unreadable"
-end
-
-local lastWatched = {}
-local function checkWatched(force)
-    local changed = false
-    for _, entry in ipairs(WATCH) do
-        local value = readWatched(entry)
-        if force or value ~= lastWatched[entry.name] then
-            lastWatched[entry.name] = value
-            changed = true
-        end
-    end
-    if changed then
-        local parts = {}
-        for _, entry in ipairs(WATCH) do
-            table.insert(parts, entry.name .. "=" .. tostring(lastWatched[entry.name]))
-        end
-        local unix = now()
-        say("VOS VARS" .. (unix and (" at unix " .. unix) or "") .. ": " .. table.concat(parts, "  "))
-    end
-end
-
-checkWatched(true)
-Event.ServerLogic.Subscribe("vosDiscoveryWatch", function()
-    checkWatched(false)
-end)
-
--- The full variable-name scan is no longer needed now that the client's own
--- list is available; set SCAN_NAMES = true to run it again.
-local SCAN_NAMES = false
-if SCAN_NAMES then
-    say("Scanning variable names. This takes a minute or two...")
-end
--- Once the scan is finished, scanStep() returns false and the handler simply
--- does nothing (unsubscribing from inside its own handler is not documented).
-local scanFinished = not SCAN_NAMES
-Event.ServerLogic.Subscribe("vosDiscoveryScan", function()
-    if not scanFinished then
-        scanFinished = not scanStep()
     end
 end)

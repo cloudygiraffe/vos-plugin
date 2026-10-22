@@ -1,6 +1,8 @@
 -- sources/game_source.lua
 -- Reads the Voice of Seren straight from the game's variables: no
 -- permissions needed, and it updates the moment the game sends the change.
+-- Highest-ranked source (VosState.RANK.GAME), but only useful inside
+-- Prifddinas (see below).
 --
 -- From the client's own variable list (console command `pan VarPlayer`,
 -- October 22nd, 2026 beta client):
@@ -21,8 +23,9 @@
 -- prints the numbers as "VOS VARS"); once every number is pinned down, this
 -- can become a simple number -> clan table.
 --
--- On leaving Prifddinas the hour dropped to 0 while the clans stayed (same
--- session, 16:57 UTC), so the values are only kept up to date in the city.
+-- Observed on the beta world, October 22nd, 2026: on leaving Prifddinas the
+-- hour dropped to 0 while the clans stayed (16:57 UTC), so the values are
+-- only kept up to date inside the city.
 -- Without a clock, an hour of 0 is therefore treated as "not in Prifddinas"
 -- (at the cost of ignoring the real midnight-UTC hour in that case).
 
@@ -43,12 +46,16 @@ GameSource.KNOWN_PAIRS = {
 local VOICE1 = { domain = "VarPlayer", id = -25159, name = "ELFCITY_VOICE1_PLAYER" }
 local VOICE2 = { domain = "VarPlayer", id = -25160, name = "ELFCITY_VOICE2_PLAYER" }
 local HOUR = { domain = "VarPlayer", id = -26417, name = "ELFCITY_VOS_PLAYER_HOUR" }
--- VarTransmit may name the varbit or the VarPlayer that holds all three.
+-- VarTransmit may name the varbit or the VarPlayer that holds all three
+-- (VarPlayer 4783 is called ELFCITY_TEMP_2 in the client's list). Which one
+-- it reports isn't documented, so both are accepted; main.lua also polls.
 local OUR_NAMES = {
     [VOICE1.name] = true, [VOICE2.name] = true, [HOUR.name] = true, ELFCITY_TEMP_2 = true,
 }
 local lastKey = nil -- the last reading passed on, so repeats are skipped
 
+-- Reads one variable's current value, or nil if the game won't give it
+-- (before login, or if the ID ever changes). Replaceable for tests.
 local function read(entry)
     local ok, value = pcall(function()
         return var[entry.domain].FromID(entry.id).value
@@ -81,7 +88,10 @@ end
 
 -- Builds a reading from the current values, or nil if nothing usable.
 -- If the plugin knows the time, the reading only counts when the game's hour
--- matches the current UTC hour (otherwise it's last hour's Voice).
+-- matches the current UTC hour (otherwise it's last hour's Voice, or the
+-- player has left Prifddinas). Without a clock, hour 0 is treated as "left
+-- Prifddinas" (see the note at the top) and other hours are trusted; the
+-- reading then has no hourStart and VosState treats it as "now".
 local function readAll()
     local clans = GameSource.Decode(read(VOICE1), read(VOICE2))
     if clans == nil then
@@ -108,12 +118,15 @@ local function readAll()
     }
 end
 
--- True once at least one variable has been configured.
+-- True if this source can be used at all. Always true now that the variables
+-- are known; kept so callers (and future sources) share one shape.
 function GameSource.IsConfigured()
     return true
 end
 
--- Reads the variables once, e.g. when the plugin starts.
+-- Reads the variables once and calls onReading(reading) if they give a usable
+-- reading that differs from the last one passed on. Called at start-up, every
+-- few seconds from main.lua, and on VarTransmit.
 function GameSource.Poll(onReading)
     if not GameSource.IsConfigured() then
         return
@@ -129,6 +142,8 @@ function GameSource.Poll(onReading)
 end
 
 -- Handles a VarTransmit event: re-read if one of our variables changed.
+--   event     : the VarTransmit event (event.var.configName is read in pcall)
+--   onReading : as for Poll
 function GameSource.HandleVarTransmit(event, onReading)
     local ok, changedName = pcall(function() return event.var.configName end)
     if ok and OUR_NAMES[changedName] then
