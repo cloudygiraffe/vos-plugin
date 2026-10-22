@@ -332,6 +332,22 @@ test("Help text appears only when nothing can read the Voice from anywhere", fun
 end)
 
 --------------------------------------------------------------------------------
+-- game variables
+--------------------------------------------------------------------------------
+
+local GameSource = require("src/sources/game_source")
+
+test("Game Voice values decode alphabetically, 1 = Amlodd to 8 = Trahaearn", function()
+    -- Seen on the beta world at 16:42 UTC, October 22nd, 2026: 1 and 4 while
+    -- Amlodd and Hefin had the Voice.
+    eq(table.concat(GameSource.Decode(1, 4), ","), "Amlodd,Hefin")
+    eq(table.concat(GameSource.Decode(8, 2), ","), "Trahaearn,Cadarn")
+    eq(GameSource.Decode(0, 4), nil, "0 means unknown")
+    eq(GameSource.Decode(3, 3), nil, "the same clan twice is not a valid Voice")
+    eq(GameSource.Decode(9, 1), nil, "out of range")
+end)
+
+--------------------------------------------------------------------------------
 
 print(string.format("%d passed, %d failed", passed, failed))
 if failed > 0 then

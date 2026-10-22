@@ -37,7 +37,7 @@ The plugin can learn the Voice three ways. It uses whichever ones you allow.
 
 | Source | Permission | Works outside Prifddinas? | Notes |
 |---|---|---|---|
-| Game data | none | yes | **Not wired up yet.** Needs the variable name, which the discovery tool will find on the beta world. |
+| Game data | none | yes (to confirm away from Prifddinas) | The game's own `ELFCITY_VOICE1_PLAYER` / `ELFCITY_VOICE2_PLAYER` variables (clans numbered alphabetically, 1 = Amlodd to 8 = Trahaearn) plus `ELFCITY_VOS_PLAYER_HOUR` (the UTC hour they're for). Found on the beta world on October 22nd, 2026. Best source: no permissions, instant. |
 | RuneScape Wiki API | optional *web requests* (`httpAccess`) | yes | Uses `https://api.weirdgloop.org/runescape/vos`. Crowdsourced, so it can lag. Once the plugin knows the time, data for an older hour is shown as "waiting for this hour", not as current. The game's own announcement always overrides it. |
 | Prifddinas announcement | optional *chat access* (`chatAccess`) | no | Reads the game's own "The Voice of Seren is now active in the ... district." message. Only player-free system messages are accepted. |
 
@@ -83,7 +83,7 @@ voice-of-seren/          the plugin itself (this folder goes in dev_plugins)
     sources/
       api_source.lua     RuneScape Wiki API
       chat_source.lua    Prifddinas chat announcement
-      game_source.lua    game variables (to be filled in after discovery)
+      game_source.lua    the game's own Voice variables
 tools/vos-discovery/     beta-world tool that finds the game variables
 tests/                   unit tests and an end-to-end test with a fake API
 docs/DESIGN.md           how it works, decisions, and open questions
@@ -115,7 +115,8 @@ Full steps, including the discovery tool, are in [docs/TESTING.md](docs/TESTING.
 - [ ] Replace `contactEmailAddress` in `plugin.json` (Jagex recommends one that
       is different from your mod.io login).
 - [ ] Test every item in [docs/TESTING.md](docs/TESTING.md).
-- [ ] Fill in `game_source.lua` if the discovery tool finds the variable.
+- [ ] Confirm the game variables update at the hour, and whether they do away
+      from Prifddinas.
 - [ ] Re-read every file: Jagex's AI policy requires the author to have reviewed
       and understood all submitted code.
 

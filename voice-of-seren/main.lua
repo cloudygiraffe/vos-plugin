@@ -168,6 +168,9 @@ Event.ServerLogic.Subscribe("vosTick", function()
         restoreFromHistoryIfUseful()
     end
     if serverTicks % REFRESH_EVERY_SERVER_TICKS == 0 then
+        -- Also re-read the game's Voice variables (after login they may only
+        -- arrive a moment later, and VarTransmit naming isn't documented).
+        GameSource.Poll(handleReading)
         refreshUi()
     end
 end)
@@ -182,7 +185,7 @@ pcall(function()
     end)
 end)
 
--- Game variables: only used once game_source.lua knows which ones to watch.
+-- Game variables: the Voice changed (ELFCITY_VOICE1/2_PLAYER).
 Event.VarTransmit.Subscribe("vosVars", function(event)
     GameSource.HandleVarTransmit(event, handleReading)
 end)

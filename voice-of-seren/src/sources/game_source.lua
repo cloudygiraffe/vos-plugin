@@ -1,16 +1,17 @@
 -- sources/game_source.lua
--- Reads the Voice of Seren straight from game variables, if the client has
--- them. This would be the best source: no permissions needed, and instant.
+-- Reads the Voice of Seren straight from the game's variables: no
+-- permissions needed, and it updates the moment the game sends the change.
 --
--- STATUS: not wired up yet. Inside Prifddinas the game shows two clan icons
--- for the active Voice, so the client must receive that data somehow, but the
--- variable names and their value encoding are not documented. Finding them is
--- the job of the discovery tool in tools/vos-discovery (see docs/TESTING.md).
+-- From the client's own variable list (console command `pan VarPlayer`,
+-- October 22nd, 2026 beta client):
 --
--- Once the discovery tool has identified the variable(s), add them to
--- KNOWN_VARIABLES below. Each entry says where the variable lives and how to
--- turn its value into clan names. Everything else in this file already works
--- off that table, so no other code needs to change.
+--   ELFCITY_VOICE1_PLAYER    varbit -25159 (VarPlayer 4783, bits 0-6)
+--   ELFCITY_VOICE2_PLAYER    varbit -25160 (VarPlayer 4783, bits 7-12)
+--   ELFCITY_VOS_PLAYER_HOUR  varbit -26417 (VarPlayer 4783, bits 13-18)
+--
+-- On the beta world at 16:42 UTC the values were 1, 4 and 16 while Amlodd and
+-- Hefin had the Voice: the hour is the UTC hour, and the clans are numbered
+-- alphabetically from 1 (Amlodd) to 8 (Trahaearn). 0 means not known.
 
 local Clock = require("src/clock")
 local TimeUtil = require("src/timeutil")
@@ -20,57 +21,76 @@ local GameSource = {}
 
 GameSource.LABEL = "game data"
 
--- Example of what an entry will look like once the variable is known:
---
---   {
---       domain = "VarPlayer",       -- "VarPlayer" or "VarClient"
---       name = "PRIF_VOS_DISTRICTS", -- configName reported by the discovery tool
---       decode = function(value)
---           -- turn the raw value into a list of clan names, e.g. via a
---           -- lookup table of clan IDs -> names
---           return { "Iorwerth", "Cadarn" }
---       end,
---   },
-local KNOWN_VARIABLES = {
+GameSource.CLAN_BY_NUMBER = {
+    "Amlodd", "Cadarn", "Crwys", "Hefin", "Iorwerth", "Ithell", "Meilyr", "Trahaearn",
 }
 
--- Looks up a variable config by domain and name. Returns nil if the game
--- does not expose it (for example, it only exists while in Prifddinas).
-local function findVariable(entry)
-    local ok, variable = pcall(function()
-        return var[entry.domain][entry.name]
+local VOICE1 = { domain = "VarPlayer", id = -25159, name = "ELFCITY_VOICE1_PLAYER" }
+local VOICE2 = { domain = "VarPlayer", id = -25160, name = "ELFCITY_VOICE2_PLAYER" }
+local HOUR = { domain = "VarPlayer", id = -26417, name = "ELFCITY_VOS_PLAYER_HOUR" }
+-- VarTransmit may name the varbit or the VarPlayer that holds all three.
+local OUR_NAMES = {
+    [VOICE1.name] = true, [VOICE2.name] = true, [HOUR.name] = true, ELFCITY_TEMP_2 = true,
+}
+local lastKey = nil -- the last reading passed on, so repeats are skipped
+
+local function read(entry)
+    local ok, value = pcall(function()
+        return var[entry.domain].FromID(entry.id).value
     end)
-    if ok then
-        return variable
+    if ok and type(value) == "number" then
+        return value
     end
     return nil
 end
 
--- Builds a reading from the current values of all known variables, or
--- returns nil if nothing usable was found.
-local function readAll()
-    for _, entry in ipairs(KNOWN_VARIABLES) do
-        local variable = findVariable(entry)
-        if variable ~= nil then
-            local ok, clans = pcall(entry.decode, variable.value)
-            if ok and type(clans) == "table" and #clans > 0 then
-                local now = Clock.Now()
-                return {
-                    clans = clans,
-                    hourStart = now and TimeUtil.HourStart(now) or nil,
-                    source = GameSource.LABEL,
-                    observedAt = now,
-                    rank = VosState.RANK.GAME,
-                }
-            end
-        end
+-- For tests: replaces the reader and forgets the last reading.
+function GameSource.SetReader(reader)
+    read = reader
+    lastKey = nil
+end
+
+-- Turns the raw values into a list of clan names, or nil if they aren't a
+-- valid pair. Pure; unit tested.
+function GameSource.Decode(voice1, voice2)
+    local first = GameSource.CLAN_BY_NUMBER[voice1 or 0]
+    local second = GameSource.CLAN_BY_NUMBER[voice2 or 0]
+    if first == nil or second == nil or first == second then
+        return nil
     end
-    return nil
+    return { first, second }
+end
+
+-- Builds a reading from the current values, or nil if nothing usable.
+-- If the plugin knows the time, the reading only counts when the game's hour
+-- matches the current UTC hour (otherwise it's last hour's Voice).
+local function readAll()
+    local clans = GameSource.Decode(read(VOICE1), read(VOICE2))
+    if clans == nil then
+        return nil
+    end
+    local now = Clock.Now()
+    local hourStart = nil
+    if now then
+        local gameHour = read(HOUR)
+        local currentHour = math.floor(now / 3600) % 24
+        if gameHour ~= currentHour then
+            return nil
+        end
+        hourStart = TimeUtil.HourStart(now)
+    end
+    return {
+        clans = clans,
+        hourStart = hourStart,
+        source = GameSource.LABEL,
+        observedAt = now,
+        rank = VosState.RANK.GAME,
+    }
 end
 
 -- True once at least one variable has been configured.
 function GameSource.IsConfigured()
-    return #KNOWN_VARIABLES > 0
+    return true
 end
 
 -- Reads the variables once, e.g. when the plugin starts.
@@ -80,21 +100,19 @@ function GameSource.Poll(onReading)
     end
     local reading = readAll()
     if reading then
-        onReading(reading)
+        local key = table.concat(reading.clans, ",") .. "@" .. tostring(reading.hourStart)
+        if key ~= lastKey then
+            lastKey = key
+            onReading(reading)
+        end
     end
 end
 
 -- Handles a VarTransmit event: re-read if one of our variables changed.
 function GameSource.HandleVarTransmit(event, onReading)
-    if not GameSource.IsConfigured() or event == nil or event.var == nil then
-        return
-    end
-    local changedName = event.var.configName
-    for _, entry in ipairs(KNOWN_VARIABLES) do
-        if entry.name == changedName then
-            GameSource.Poll(onReading)
-            return
-        end
+    local ok, changedName = pcall(function() return event.var.configName end)
+    if ok and OUR_NAMES[changedName] then
+        GameSource.Poll(onReading)
     end
 end
 

@@ -226,6 +226,27 @@ check(#chatLines == 1 and string.find(chatLines[1], "Meilyr", 1, true) ~= nil,
 check(string.find(strip.content, "Meilyr", 1, true) ~= nil, "strip switches to the new hour")
 check(database.history ~= nil and #database.history == 2, "history is saved with two hours")
 
+-- The game's own Voice variables (ELFCITY_VOICE1/2_PLAYER, hour). A value
+-- left over from the previous hour (15) must be ignored...
+local voiceVars = { [-25159] = 1, [-25160] = 4, [-26417] = 15 }
+var = strict("var", {
+    VarPlayer = strict("var.VarPlayer", {
+        FromID = function(variableId)
+            if voiceVars[variableId] == nil then error("unknown variable") end
+            return { value = voiceVars[variableId] }
+        end,
+    }),
+})
+advanceSeconds(6)
+check(string.find(strip.content, "Amlodd", 1, true) == nil, "last hour's game values are ignored")
+
+-- ...and this hour's values (16:00 UTC: Meilyr = 7, Trahaearn = 8) are used.
+voiceVars = { [-25159] = 7, [-25160] = 8, [-26417] = 16 }
+fire("VarTransmit", { var = { configName = "ELFCITY_VOICE2_PLAYER" }, oldValue = 4, newValue = 8 })
+check(string.find(strip.content, "Trahaearn", 1, true) ~= nil and string.find(strip.content, "Meilyr", 1, true) ~= nil,
+    "strip shows the clans from the game's variables (got: " .. tostring(strip.content) .. ")")
+check(#chatLines == 1, "no second alert for Meilyr in the same hour")
+
 print(failures == 0 and "mock game test passed" or (failures .. " check(s) failed"))
 if failures > 0 then
     os.exit(1)

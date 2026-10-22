@@ -84,9 +84,12 @@ can reach 12 an hour.
 
 ## Open questions (answer on the beta world)
 
-1. **Is there a game variable for the active districts?** The Prifddinas clan
-   icons suggest yes. If so, `game_source.lua` makes both permissions
-   unnecessary for most players. → `tools/vos-discovery`
+1. **Is there a game variable for the active districts?** Yes (October 22nd,
+   2026): `ELFCITY_VOICE1_PLAYER` (varbit -25159), `ELFCITY_VOICE2_PLAYER`
+   (-25160) and `ELFCITY_VOS_PLAYER_HOUR` (-26417), all in VarPlayer 4783.
+   Values 1 and 4 at 16:00 UTC while Amlodd and Hefin were active, so clans
+   are numbered alphabetically. Still to confirm: that they change on the
+   hour, and whether they update away from Prifddinas.
 2. **Exact chat wording and type.** Is it one message per district or one for
    both? Which `ChatType`? Is it sent outside Prifddinas?
 3. **Is `os.time()` available?** If yes, the clock works with no permissions.
